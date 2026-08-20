@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 sealed interface StationsUiState {
     data object Loading : StationsUiState
@@ -23,7 +25,9 @@ class StationsViewModel(private val repository: StationRepository) : ViewModel()
     init { retryRockserver() }
     fun retryRockserver() = viewModelScope.launch {
         _state.value = StationsUiState.Loading
-        _state.value = when (val result = repository.loadCatalogue()) {
+        // HttpURLConnection is blocking; keep it off the Compose/Main dispatcher.
+        val result = withContext(Dispatchers.IO) { repository.loadCatalogue() }
+        _state.value = when (result) {
             is CatalogueLoadResult.Success -> StationsUiState.Content(result.catalogue)
             is CatalogueLoadResult.Fallback -> StationsUiState.Content(result.catalogue, "Rockserver unavailable — using built-in station catalogue")
             is CatalogueLoadResult.Fatal -> StationsUiState.Error("Could not load either Rockserver or the built-in catalogue")

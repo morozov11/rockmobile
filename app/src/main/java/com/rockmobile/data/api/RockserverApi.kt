@@ -4,6 +4,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import android.util.Log
 
 /** Small HTTP boundary so catalogue parsing and failure behaviour stay unit-testable. */
 interface HttpTransport {
@@ -38,6 +39,7 @@ class RockserverApi(
         val endpoint = baseUrl.trim().trimEnd('/') + "/v1/search"
         val request = JSONObject().put("query", query).put("locale", "en-US").put("limit", 50)
         val response = transport.post(endpoint, bearerToken, request.toString())
+        Log.d("RockserverApi", "POST $endpoint -> ${response.code}, bytes=${response.body.length}")
         if (response.code !in 200..299) throw RockserverHttpException(response.code)
         return response.body
     }
