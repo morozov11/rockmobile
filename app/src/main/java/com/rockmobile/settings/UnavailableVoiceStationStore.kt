@@ -20,6 +20,13 @@ class UnavailableVoiceStationStore(context: Context) {
         if (ids.remove(stationId)) preferences.edit().putStringSet(UNAVAILABLE_IDS_KEY, ids).apply()
     }
 
+    /** Atomically replaces only approved legacy IDs; unmatched values survive this transition release. */
+    fun migrateLegacyIds(approvedMappings: Map<String, String>) {
+        val oldIds = unavailableStationIds()
+        val migrated = migrateLegacyStationIds(oldIds, approvedMappings)
+        if (migrated != oldIds) preferences.edit().putStringSet(UNAVAILABLE_IDS_KEY, migrated.take(MAX_IDS).toSet()).commit()
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "rockmobile_voice_availability"
         const val UNAVAILABLE_IDS_KEY = "unavailable_voice_station_ids"

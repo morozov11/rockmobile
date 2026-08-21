@@ -4,7 +4,7 @@ Android-клиент интернет-радио для RockCast. Он рабо�
 
 ## Возможности
 
-- **Радио без сервера** — встроенный каталог в формате RockCast доступен и при недоступном Rockserver.
+- **Радио без сервера** — проверенный pinned snapshot общего каталога доступен и при недоступном Rockserver.
 - **Каталог Rockserver** — сервер остаётся основным источником станций, когда доступен.
 - **Поиск и фильтры** — по названию, жанру, стране и языку.
 - **Фоновое воспроизведение** — Media3, системное уведомление, экран блокировки и Bluetooth-управление.
@@ -56,20 +56,15 @@ Voice-сессия отправляет `start`, аудиоблоки и `commit
 
 ## Каталог станций
 
-[`app/src/main/assets/stations.txt`](app/src/main/assets/stations.txt) — bundled-каталог в формате RockCast:
+[`app/src/main/assets/stations.v1.json`](app/src/main/assets/stations.v1.json) — bundled schema-v1 snapshot общего каталога. Приложение принимает только pinned release `2026.08.2` с SHA-256 `3fa20dca94fc059bd433a47b9fba9bb6d5e5e1aa2957a5ffb58b2a7b20b1d74d`; ID станции и primary stream берутся из JSON, а не вычисляются из URL.
 
-```text
-# name | url | tags | bitrate | codec | country
-Station name | https://stream.example/radio | rock,metal | 128 | mp3 | USA
-```
-
-Стабильные Android ID выводятся из URL потока, поэтому не требуется второй вручную поддерживаемый список.
+`stations.txt` сохранён только как исторический вход для проверяемой миграции и больше не читается приложением. При загрузке snapshot старые URL-derived значения из `rockmobile:…` сопоставляются с одобренными canonical ID для сохранённого списка недоступных voice-станций; неизвестные значения остаются нетронутыми на переходный релиз.
 
 ## Устройство проекта
 
 ```text
 rockmobile/
-├── app/src/main/assets/stations.txt     # fallback-каталог RockCast
+├── app/src/main/assets/stations.v1.json # pinned v1 fallback-каталог
 ├── app/src/main/java/com/rockmobile/
 │   ├── data/                            # API, DTO, источники, repository
 │   ├── playback/                        # MediaSessionService и controller
@@ -86,7 +81,7 @@ rockmobile/
 ## Ограничения и планы
 
 - Пользовательский Settings Screen — RM-005.
-- Единый канонический каталог RockCast/Rockmobile/Rockserver — RM-004.
+- Единый канонический каталог RockCast/Rockmobile/Rockserver — RM-004. Базовая v1-интеграция выполнена; extended SQLite export (~16k) ещё не передан RockServer и остаётся отдельным блокером расширенной offline-части.
 - Голосовой поиск требует работающего Rockserver и Speech-to-Text на нём; клиент не хранит учётные данные SpeechKit.
 
 Полный план: [ROADMAP.md](ROADMAP.md).

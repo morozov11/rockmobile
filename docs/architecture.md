@@ -3,7 +3,7 @@
 ```text
 StationsScreen ── StationsViewModel ── StationRepository
                                            ├── RockserverStationSource
-                                           └── RockcastAssetStationSource
+                                           └── RockcastAssetStationSource (pinned schema-v1 JSON)
 
 StationsScreen ── PlaybackController ── MediaController ── MediaSessionService ── ExoPlayer
 
@@ -13,7 +13,7 @@ StationsScreen ── VoiceCommandController ── VoiceRecorder / RockserverVo
 
 ## Каталог
 
-`StationRepository` реализует remote-first policy. Network, timeout, HTTP, malformed/empty response приводят к чтению bundled `stations.txt`. Отмена coroutine пробрасывается и не считается fallback. Если оба источника недоступны, ViewModel показывает фатальную ошибку.
+`StationRepository` реализует remote-first policy. Network, timeout, HTTP, malformed/empty response приводят к чтению проверенного bundled `stations.v1.json`. Loader сверяет SHA-256, catalogVersion и schemaVersion, проверяет canonical ID и правила primary stream. Отмена coroutine пробрасывается и не считается fallback. Если оба источника недоступны, ViewModel показывает фатальную ошибку. Ошибки Media3 не поступают в repository и не могут переключить каталог.
 
 Фильтрация существует только в `StationsViewModel` и работает с общей моделью `Station`. Voice-result заменяет видимый список ранжированными кандидатами Rockserver и сразу запускает выбранную станцию.
 
@@ -31,4 +31,3 @@ StationsScreen ── VoiceCommandController ── VoiceRecorder / RockserverVo
 | `viewModelScope` | Загрузка и состояние каталога | Владеть ExoPlayer |
 | Voice scope | Одна voice-операция | Передавать непроверенные данные в player |
 | MediaSessionService | ExoPlayer и media-сессия | Владеть UI |
-

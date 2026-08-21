@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
         val unavailableVoiceStations = UnavailableVoiceStationStore(this)
         val repository = StationRepository(
             RockserverStationSource(RockserverApi(), settings::rockserverUrl, settings::bearerToken),
-            RockcastAssetStationSource(assets),
+            RockcastAssetStationSource(assets, unavailableVoiceStations::migrateLegacyIds),
         )
         setContent {
             RockmobileTheme {

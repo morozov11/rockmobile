@@ -8,12 +8,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.net.SocketTimeoutException
 
 class StationRepositoryTest {
     private val station = Station("id", "Rock", "https://example.test/live")
     @Test fun remoteSuccess_usesRockserver() = runTest { assertEquals(CatalogueSource.ROCKSERVER, (StationRepository(remote(listOf(station)), local(emptyList())).loadCatalogue() as CatalogueLoadResult.Success).catalogue.source) }
     @Test fun remoteFailures_fallBackToBundled() = runTest {
-        listOf(IllegalStateException(), EmptyCatalogueException("empty")).forEach { failure ->
+        listOf(IllegalStateException(), SocketTimeoutException(), EmptyCatalogueException("empty")).forEach { failure ->
             val result = StationRepository(remote(error = failure), local(listOf(station))).loadCatalogue() as CatalogueLoadResult.Fallback
             assertEquals(CatalogueSource.BUNDLED, result.catalogue.source)
         }

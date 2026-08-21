@@ -46,8 +46,8 @@ class RockserverVoiceClient(private val http: OkHttpClient = OkHttpClient.Builde
                     if (resolution != null && deferred.complete(resolution)) webSocket.close(1000, null)
                 }.onFailure { deferred.completeExceptionally(it); webSocket.close(1002, null) }
             }
-            override fun onFailure(webSocket: WebSocket, throwable: Throwable, response: Response?) {
-                if (!deferred.isCompleted) deferred.completeExceptionally(throwable)
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (!deferred.isCompleted) deferred.completeExceptionally(t)
             }
         })
         return try { withTimeout(30_000) { deferred.await() } } finally { socket?.cancel() }

@@ -15,6 +15,19 @@ data class Station(
     val bitrateKbps: Int? = null,
     val homepageUrl: String? = null,
     val faviconUrl: String? = null,
+    /** The reviewed stream declarations; [streamUrl] is always the primary entry for existing callers. */
+    val streams: List<StationStream> = listOf(
+        StationStream(id = "primary", url = streamUrl, codec = codec, bitrateKbps = bitrateKbps, primary = true),
+    ),
+)
+
+/** Stable stream identity is scoped to its station. Playback deliberately uses only the primary stream. */
+data class StationStream(
+    val id: String,
+    val url: String,
+    val codec: String? = null,
+    val bitrateKbps: Int? = null,
+    val primary: Boolean,
 )
 
 data class StationCatalogue(val stations: List<Station>, val source: CatalogueSource)
