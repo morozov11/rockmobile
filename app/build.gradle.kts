@@ -34,6 +34,7 @@ dependencies {
     implementation("androidx.media3:media3-session:1.8.0")
     implementation("androidx.media3:media3-common:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     testImplementation("junit:junit:4.13.2")
     // Android's platform org.json methods are stubs in local JVM tests.

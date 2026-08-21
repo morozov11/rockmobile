@@ -64,4 +64,14 @@ class StationsViewModel(
         val content = _state.value as? StationsUiState.Content ?: return
         _state.value = content.copy(filters = transform(content.filters))
     }
+
+    /** Displays the ranked Rockserver candidates from a completed voice request. */
+    fun showVoiceCandidates(candidates: List<Station>) {
+        val content = _state.value as? StationsUiState.Content ?: return
+        if (candidates.isEmpty()) return
+        _state.value = content.copy(
+            catalogue = StationCatalogue(candidates, content.catalogue.source),
+            filters = StationFilters(),
+        )
+    }
 }

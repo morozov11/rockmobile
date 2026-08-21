@@ -34,6 +34,8 @@ class PlaybackController(context: Context) : Player.Listener {
     private var controller: MediaController? = null
     private var queue: List<Station> = emptyList()
     private var pendingPlay: Pair<Station, List<Station>>? = null
+    /** Desired state while the asynchronous MediaController connection is still pending. */
+    private var pendingShouldPlay = true
 
     init {
         future.addListener({
@@ -43,19 +45,29 @@ class PlaybackController(context: Context) : Player.Listener {
 
     fun play(station: Station, stations: List<Station> = listOf(station)) {
         val playableStations = stations.ifEmpty { listOf(station) }
+        // A deferred replay preserves a user toggle made before the MediaSession connected.
+        val deferredReplay = controller != null && pendingPlay?.first?.id == station.id
+        if (!deferredReplay) pendingShouldPlay = true
         val index = playableStations.indexOfFirst { it.id == station.id }.coerceAtLeast(0)
         queue = playableStations
         _state.value = _state.value.copy(station = station, error = null, streamTitle = null, streamArtist = null,
             canSkipPrevious = index > 0, canSkipNext = index < playableStations.lastIndex)
         val mediaItems = playableStations.map(::mediaItem)
         val activeController = controller
-        if (activeController == null) { pendingPlay = station to playableStations; return }
+        if (activeController == null) { pendingPlay = station to playableStations; pendingShouldPlay = true; return }
         pendingPlay = null
         activeController.setMediaItems(mediaItems, index, 0L)
         activeController.prepare()
-        activeController.play()
+        if (pendingShouldPlay) activeController.play() else activeController.pause()
     }
-    fun toggle() { controller?.let { if (it.isPlaying) it.pause() else it.play() } }
+    fun toggle() {
+        val activeController = controller
+        if (activeController == null) {
+            pendingShouldPlay = !pendingShouldPlay
+            return
+        }
+        if (activeController.isPlaying) activeController.pause() else activeController.play()
+    }
     fun stop() { controller?.stop() }
     fun skipToPrevious() { controller?.seekToPreviousMediaItem() }
     fun skipToNext() { controller?.seekToNextMediaItem() }

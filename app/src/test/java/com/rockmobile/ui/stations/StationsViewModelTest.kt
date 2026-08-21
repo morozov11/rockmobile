@@ -58,6 +58,15 @@ class StationsViewModelTest {
         model.updateFilters { it.copy(query = "missing") }
         assertTrue((model.state.value as StationsUiState.Content).stations.isEmpty())
     }
+    @Test fun voiceCandidates_replaceVisibleList_andClearOldFilters() = runTest(dispatcher) {
+        val other = Station("other", "Other", "https://example.test/other")
+        val model = StationsViewModel(repository(remote = { listOf(station, other) }, local = { emptyList() }), dispatcher)
+        runCurrent(); model.updateFilters { it.copy(query = "missing") }
+        model.showVoiceCandidates(listOf(other))
+        val content = model.state.value as StationsUiState.Content
+        assertEquals(listOf(other), content.stations)
+        assertEquals(StationFilters(), content.filters)
+    }
     private fun repository(remote: suspend () -> List<Station>, local: suspend () -> List<Station>) = StationRepository(
         object : RemoteStationSource { override suspend fun load() = remote() }, object : LocalStationSource { override suspend fun load() = local() },
     )

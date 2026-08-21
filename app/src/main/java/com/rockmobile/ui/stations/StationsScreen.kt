@@ -38,6 +38,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -70,6 +73,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rockmobile.domain.model.Station
 import com.rockmobile.playback.PlaybackState
+import com.rockmobile.voice.VoiceUiState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
@@ -78,10 +82,15 @@ import java.net.URL
 fun StationsScreen(
     state: StationsUiState,
     playback: PlaybackState,
+    voice: VoiceUiState,
     retry: () -> Unit,
     updateFilters: ((StationFilters) -> StationFilters) -> Unit,
     play: (Station, List<Station>) -> Unit,
     toggle: () -> Unit,
+    onVoice: () -> Unit,
+    onFinishVoice: () -> Unit,
+    onCancelVoice: () -> Unit,
+    onDismissVoice: () -> Unit,
     openPlayer: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
@@ -90,19 +99,20 @@ fun StationsScreen(
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .imePadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             RockHeader(retry)
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(6.dp))
             when (state) {
                 StationsUiState.Loading -> LoadingState()
                 is StationsUiState.Error -> ErrorState(state.message, retry)
                 is StationsUiState.Content -> {
                     state.fallbackReason?.let { FallbackBanner(it) }
-                    CatalogueHeader(state.catalogue.source.name, state.stations.size, retry)
-                    SearchAndFilters(state, updateFilters)
+                    CatalogueHeader(state.catalogue.source.name, state.stations.size)
+                    SearchAndFilters(state, voice, updateFilters, onVoice, onFinishVoice, onCancelVoice)
+                    VoiceStatusBar(voice, onCancelVoice, onDismissVoice)
                     MiniPlayer(playback, toggle, openPlayer)
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(6.dp))
                     StationTable(
                         modifier = Modifier.weight(1f),
                         stations = state.stations,
@@ -110,6 +120,36 @@ fun StationsScreen(
                         play = { station -> play(station, state.stations) },
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceStatusBar(state: VoiceUiState, cancel: () -> Unit, dismiss: () -> Unit) {
+    if (state == VoiceUiState.Idle) return
+    val (message, busy) = when (state) {
+        VoiceUiState.Recording -> "Listening… tap Stop when finished" to false
+        is VoiceUiState.Processing -> (state.transcript?.let { "Processing “$it”" } ?: "Processing voice command…") to true
+        VoiceUiState.PermissionRequired -> "Microphone permission is required" to false
+        VoiceUiState.PermissionDenied -> "Microphone permission denied — tap the mic to retry" to false
+        VoiceUiState.PermissionPermanentlyDenied -> "Enable microphone permission in Android settings" to false
+        is VoiceUiState.Success -> "Voice: “${state.transcript}” · ${state.stationName}" to false
+        is VoiceUiState.NoMatch -> "No stations found for “${state.transcript}”" to false
+        VoiceUiState.ServerUnavailable -> "Voice service unavailable; radio still works" to false
+        is VoiceUiState.RecoverableError -> state.message to false
+        VoiceUiState.Idle -> return
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+    ) {
+        Row(Modifier.padding(start = 10.dp, end = 2.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Text(message, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f).padding(start = if (busy) 8.dp else 0.dp))
+            IconButton(onClick = if (state is VoiceUiState.Recording || state is VoiceUiState.Processing) cancel else dismiss, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.Close, if (state is VoiceUiState.Recording || state is VoiceUiState.Processing) "Cancel voice command" else "Dismiss voice message", modifier = Modifier.size(18.dp))
             }
         }
     }
@@ -126,10 +166,9 @@ private fun RockHeader(retry: () -> Unit) {
             Text(
                 "RockCast",
                 color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
-            Text("Rock radio · mobile player", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onClick = retry) {
             Icon(Icons.Default.Refresh, "Refresh catalogue", tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -181,26 +220,37 @@ private fun FallbackBanner(message: String) {
 }
 
 @Composable
-private fun CatalogueHeader(source: String, count: Int, retry: () -> Unit) {
+private fun CatalogueHeader(source: String, count: Int) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Stations", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Text("  · ${source.lowercase().replaceFirstChar(Char::uppercase)} · $count", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-        IconButton(onClick = retry, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Default.Refresh, "Refresh stations", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(19.dp))
-        }
+        Text("Stations", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("  · ${source.lowercase().replaceFirstChar(Char::uppercase)} · $count", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
-private fun SearchAndFilters(content: StationsUiState.Content, update: ((StationFilters) -> StationFilters) -> Unit) {
+private fun SearchAndFilters(
+    content: StationsUiState.Content,
+    voice: VoiceUiState,
+    update: ((StationFilters) -> StationFilters) -> Unit,
+    startVoice: () -> Unit,
+    finishVoice: () -> Unit,
+    cancelVoice: () -> Unit,
+) {
     OutlinedTextField(
         value = content.filters.query,
         onValueChange = { value -> update { it.copy(query = value) } },
         placeholder = { Text("Find a station") },
         leadingIcon = { Icon(Icons.Default.Search, null) },
+        trailingIcon = {
+            when (voice) {
+                VoiceUiState.Recording -> IconButton(onClick = finishVoice) { Icon(Icons.Default.Stop, "Finish voice recording", tint = MaterialTheme.colorScheme.error) }
+                is VoiceUiState.Processing -> IconButton(onClick = cancelVoice) { Icon(Icons.Default.Close, "Cancel voice command") }
+                else -> IconButton(onClick = startVoice) { Icon(Icons.Default.Mic, "Start voice search", tint = MaterialTheme.colorScheme.primary) }
+            }
+        },
         singleLine = true,
         shape = MaterialTheme.shapes.small,
-        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = MaterialTheme.colorScheme.primary,
             unfocusedBorderColor = MaterialTheme.colorScheme.outline,
@@ -216,7 +266,7 @@ private fun SearchAndFilters(content: StationsUiState.Content, update: ((Station
         ),
     )
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         FilterMenu("Genre", content.catalogue.stations.flatMap { it.tags }.distinctSorted(), content.filters.genre) { update { filters -> filters.copy(genre = it) } }
@@ -259,17 +309,16 @@ private fun FilterMenu(label: String, values: List<String>, selected: String?, s
 
 @Composable
 private fun StationTable(modifier: Modifier = Modifier, stations: List<Station>, currentStationId: String?, play: (Station) -> Unit) {
-    RockPanel(modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Station", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1.5f))
-            Text("Tags", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
-            Text("Bitrate / codec", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(.75f))
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .55f)),
+    ) {
         if (stations.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No stations match these filters.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         } else {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 5.dp)) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp)) {
                 itemsIndexed(stations, key = { _, station -> station.id }) { index, station ->
                     StationRow(station, currentStationId == station.id, index) { play(station) }
                 }
@@ -291,18 +340,22 @@ private fun RockPanel(modifier: Modifier = Modifier, content: @Composable Column
 @Composable
 private fun MiniPlayer(state: PlaybackState, toggle: () -> Unit, openPlayer: () -> Unit) {
     val station = state.station ?: return
-    RockPanel(Modifier.fillMaxWidth().clickable(onClick = openPlayer)) {
-        Text("NOW PLAYING", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            StationLogo(station, Modifier.size(46.dp))
-            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                Text(station.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                Text(state.error ?: state.streamTitle ?: if (state.isPlaying) "Playing" else "Paused", color = if (state.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clickable(onClick = openPlayer),
+        color = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .55f)),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            StationLogo(station, Modifier.size(40.dp))
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                Text(station.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                Text(state.error ?: state.streamTitle ?: if (state.isPlaying) "Playing" else "Paused", color = if (state.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            IconButton(onClick = toggle, modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) {
-                Icon(if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (state.isPlaying) "Pause" else "Play", tint = MaterialTheme.colorScheme.onPrimary)
+            IconButton(onClick = toggle, modifier = Modifier.size(38.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) {
+                Icon(if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (state.isPlaying) "Pause" else "Play", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(22.dp))
             }
-            Icon(Icons.Default.ChevronRight, "Open player", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
+            Icon(Icons.Default.ChevronRight, "Open player", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -323,6 +376,9 @@ private fun StationRow(station: Station, current: Boolean, index: Int, play: () 
         }
         Text(station.tags.joinToString(", "), color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 5.dp))
         Text(listOfNotNull(station.bitrateKbps?.let { "$it k" }, station.codec).joinToString(" / ").ifBlank { "—" }, color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(.75f))
+        IconButton(onClick = play, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Default.PlayArrow, "Play ${station.name}", tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
+        }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .45f))
 }
