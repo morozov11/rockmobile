@@ -6,3 +6,4 @@ local.properties
 *.iml
 /.gradle-user-home/
 /.kotlin/
+/graphify-out/

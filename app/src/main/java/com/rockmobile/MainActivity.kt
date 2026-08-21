@@ -11,8 +11,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.rockmobile.data.api.RockserverApi
-import com.rockmobile.data.api.UrlConnectionTransport
-import com.rockmobile.data.api.WifiNetworkProvider
 import com.rockmobile.data.repository.StationRepository
 import com.rockmobile.data.stations.RockcastAssetStationSource
 import com.rockmobile.data.stations.RockserverStationSource
@@ -21,6 +19,7 @@ import com.rockmobile.settings.SettingsRepository
 import com.rockmobile.ui.stations.StationsScreen
 import com.rockmobile.ui.stations.StationsViewModel
 import com.rockmobile.ui.stations.PlayerScreen
+import com.rockmobile.ui.theme.RockmobileTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,14 +27,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val settings = SettingsRepository(this)
         val repository = StationRepository(
-            RockserverStationSource(
-                RockserverApi(UrlConnectionTransport(WifiNetworkProvider(this))),
-                settings::rockserverUrl,
-                settings::bearerToken,
-            ),
+            RockserverStationSource(RockserverApi(), settings::rockserverUrl, settings::bearerToken),
             RockcastAssetStationSource(assets),
         )
         setContent {
+            RockmobileTheme {
             val model: StationsViewModel = viewModel(factory = StationsViewModelFactory(repository))
             val state = model.state.collectAsStateWithLifecycle().value
             val playback = androidx.compose.runtime.remember { PlaybackController(this) }
@@ -44,6 +40,7 @@ class MainActivity : ComponentActivity() {
             val playbackState = playback.state.collectAsStateWithLifecycle().value
             if (playerScreen) PlayerScreen(playbackState, { playerScreen = false }, playback::toggle, playback::skipToPrevious, playback::skipToNext, playback::retry)
             else StationsScreen(state, playbackState, model::retryRockserver, model::updateFilters, playback::play, playback::toggle) { playerScreen = true }
+            }
         }
     }
 }
