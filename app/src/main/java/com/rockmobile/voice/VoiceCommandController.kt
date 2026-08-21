@@ -22,14 +22,22 @@ sealed interface VoiceUiState {
     data class Processing(val transcript: String? = null) : VoiceUiState
     data class Success(val transcript: String, val stationName: String) : VoiceUiState
     data class NoMatch(val transcript: String) : VoiceUiState
+    data class NoPlayableStation(val transcript: String) : VoiceUiState
     data object ServerUnavailable : VoiceUiState
     data class RecoverableError(val message: String) : VoiceUiState
 }
 
 /** Minimal playback capability exposed to voice. It deliberately has no access to player internals. */
 interface VoicePlaybackActions {
-    /** Replaces the visible list with the exact ranked candidates returned by the voice request. */
-    fun showCandidates(stations: List<Station>)
+    /** Prevents speaker audio from being interpreted as the user's speech while recording. */
+    fun beginVoiceCapture()
+    /** Restores the user-selected speaker volume after the microphone is released. */
+    fun endVoiceCapture()
+    /**
+     * Replaces the visible list with ranked candidates and returns a safe candidate for auto-play.
+     * A locally known unavailable stream must never be returned here.
+     */
+    fun showCandidates(stations: List<Station>): Station?
     /** Starts the selected station using that same ranked list as the player queue. */
     fun play(station: Station, queue: List<Station>)
 }
@@ -55,20 +63,12 @@ class VoiceCommandController(
 
     fun start() {
         if (job?.isActive == true) return
+        playback.beginVoiceCapture()
         _state.value = VoiceUiState.Recording
         job = scope.launch {
             try {
                 val audio = withContext(ioDispatcher) { recorder.record() }
-                _state.value = VoiceUiState.Processing()
-                val result = withContext(ioDispatcher) { client.resolve(baseUrl(), bearerToken(), audio) { transcript -> _state.value = VoiceUiState.Processing(transcript) } }
-                when (result) {
-                    is VoiceResolution.StationMatch -> {
-                        playback.showCandidates(result.candidates)
-                        playback.play(result.selected, result.candidates)
-                        _state.value = VoiceUiState.Success(result.transcript, result.selected.name)
-                    }
-                    is VoiceResolution.NoMatch -> _state.value = VoiceUiState.NoMatch(result.transcript)
-                }
+                processCapturedAudio(audio)
             } catch (cancelled: CancellationException) {
                 _state.value = VoiceUiState.Idle
                 throw cancelled
@@ -78,11 +78,34 @@ class VoiceCommandController(
                 _state.value = VoiceUiState.ServerUnavailable
             } catch (error: Throwable) {
                 _state.value = VoiceUiState.RecoverableError(error.message ?: "Voice recording failed")
+            } finally {
+                playback.endVoiceCapture()
             }
         }
     }
 
+    private suspend fun processCapturedAudio(audio: RecordedVoice) {
+        _state.value = VoiceUiState.Processing()
+        require(audio.pcmS16Le.isNotEmpty()) { "No speech was recorded" }
+        val result = withContext(ioDispatcher) { client.resolve(baseUrl(), bearerToken(), audio) { transcript -> _state.value = VoiceUiState.Processing(transcript) } }
+        when (result) {
+            is VoiceResolution.StationMatch -> {
+                val stationToPlay = playback.showCandidates(result.candidates)
+                if (stationToPlay == null) {
+                    _state.value = VoiceUiState.NoPlayableStation(result.transcript)
+                } else {
+                    playback.play(stationToPlay, result.candidates)
+                    _state.value = VoiceUiState.Success(result.transcript, stationToPlay.name)
+                }
+            }
+            is VoiceResolution.NoMatch -> _state.value = VoiceUiState.NoMatch(result.transcript)
+        }
+    }
+
+    /** Optional early finish; the captured phrase is sent immediately. */
     fun finishRecording() { if (_state.value is VoiceUiState.Recording) recorder.finish() }
-    fun cancel() { recorder.cancel(); job?.cancel(); job = null; _state.value = VoiceUiState.Idle }
+
+    fun cancel() { recorder.cancel(); job?.cancel(); job = null; playback.endVoiceCapture(); _state.value = VoiceUiState.Idle }
     fun dismiss() { if (job?.isActive != true) _state.value = VoiceUiState.Idle }
+
 }

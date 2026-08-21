@@ -27,6 +27,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
@@ -67,11 +72,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rockmobile.domain.model.Station
+import com.rockmobile.R
 import com.rockmobile.playback.PlaybackState
 import com.rockmobile.voice.VoiceUiState
 import kotlinx.coroutines.Dispatchers
@@ -129,13 +136,14 @@ fun StationsScreen(
 private fun VoiceStatusBar(state: VoiceUiState, cancel: () -> Unit, dismiss: () -> Unit) {
     if (state == VoiceUiState.Idle) return
     val (message, busy) = when (state) {
-        VoiceUiState.Recording -> "Listening… tap Stop when finished" to false
+        VoiceUiState.Recording -> "Listening… searching after you finish speaking" to false
         is VoiceUiState.Processing -> (state.transcript?.let { "Processing “$it”" } ?: "Processing voice command…") to true
         VoiceUiState.PermissionRequired -> "Microphone permission is required" to false
         VoiceUiState.PermissionDenied -> "Microphone permission denied — tap the mic to retry" to false
         VoiceUiState.PermissionPermanentlyDenied -> "Enable microphone permission in Android settings" to false
         is VoiceUiState.Success -> "Voice: “${state.transcript}” · ${state.stationName}" to false
         is VoiceUiState.NoMatch -> "No stations found for “${state.transcript}”" to false
+        is VoiceUiState.NoPlayableStation -> "The matched stations are currently unavailable" to false
         VoiceUiState.ServerUnavailable -> "Voice service unavailable; radio still works" to false
         is VoiceUiState.RecoverableError -> state.message to false
         VoiceUiState.Idle -> return
@@ -162,7 +170,13 @@ private fun RockHeader(retry: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                painter = painterResource(R.mipmap.rockmobile_icon),
+                contentDescription = "RockCast logo",
+                modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.small),
+            )
+            Spacer(Modifier.width(8.dp))
             Text(
                 "RockCast",
                 color = MaterialTheme.colorScheme.primary,
@@ -236,6 +250,13 @@ private fun SearchAndFilters(
     finishVoice: () -> Unit,
     cancelVoice: () -> Unit,
 ) {
+    val pulseTransition = rememberInfiniteTransition(label = "voice microphone pulse")
+    val pulseAlpha by pulseTransition.animateFloat(
+        initialValue = .45f,
+        targetValue = .95f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label = "voice microphone pulse alpha",
+    )
     OutlinedTextField(
         value = content.filters.query,
         onValueChange = { value -> update { it.copy(query = value) } },
@@ -243,7 +264,10 @@ private fun SearchAndFilters(
         leadingIcon = { Icon(Icons.Default.Search, null) },
         trailingIcon = {
             when (voice) {
-                VoiceUiState.Recording -> IconButton(onClick = finishVoice) { Icon(Icons.Default.Stop, "Finish voice recording", tint = MaterialTheme.colorScheme.error) }
+                VoiceUiState.Recording -> IconButton(
+                    onClick = finishVoice,
+                    modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.error.copy(alpha = pulseAlpha)),
+                ) { Icon(Icons.Default.Stop, "Finish voice recording and search now", tint = MaterialTheme.colorScheme.onError) }
                 is VoiceUiState.Processing -> IconButton(onClick = cancelVoice) { Icon(Icons.Default.Close, "Cancel voice command") }
                 else -> IconButton(onClick = startVoice) { Icon(Icons.Default.Mic, "Start voice search", tint = MaterialTheme.colorScheme.primary) }
             }
@@ -405,7 +429,7 @@ fun PlayerScreen(state: PlaybackState, back: () -> Unit, toggle: () -> Unit, pre
                         state.streamArtist?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center) }
                         if (state.streamTitle == null && state.streamArtist == null) Text("Track info appears after Play", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 10.dp))
                         state.error?.let {
-                            Text("Playback error: $it", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 18.dp))
+                            Text("Couldn't connect to this station", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 18.dp))
                             Button(onClick = retry, modifier = Modifier.padding(top = 8.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurface)) { Text("Try again") }
                         }
                         Spacer(Modifier.weight(1f))

@@ -67,6 +67,19 @@ class StationsViewModelTest {
         assertEquals(listOf(other), content.stations)
         assertEquals(StationFilters(), content.filters)
     }
+    @Test fun unavailableVoiceCandidate_isMovedToEndUsingLocalMemory() = runTest(dispatcher) {
+        val unavailable = Station("offline", "Offline", "https://example.test/offline")
+        val available = Station("online", "Online", "https://example.test/online")
+        val model = StationsViewModel(
+            repository(remote = { listOf(available) }, local = { emptyList() }),
+            dispatcher,
+            unavailableVoiceStationIds = { setOf(unavailable.id) },
+        )
+        runCurrent()
+        val stationToPlay = model.showVoiceCandidates(listOf(unavailable, available))
+        assertEquals(listOf(available, unavailable), (model.state.value as StationsUiState.Content).stations)
+        assertEquals(available, stationToPlay)
+    }
     private fun repository(remote: suspend () -> List<Station>, local: suspend () -> List<Station>) = StationRepository(
         object : RemoteStationSource { override suspend fun load() = remote() }, object : LocalStationSource { override suspend fun load() = local() },
     )

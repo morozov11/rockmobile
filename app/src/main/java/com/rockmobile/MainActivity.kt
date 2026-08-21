@@ -21,6 +21,7 @@ import com.rockmobile.data.stations.RockcastAssetStationSource
 import com.rockmobile.data.stations.RockserverStationSource
 import com.rockmobile.playback.PlaybackController
 import com.rockmobile.settings.SettingsRepository
+import com.rockmobile.settings.UnavailableVoiceStationStore
 import com.rockmobile.ui.stations.StationsScreen
 import com.rockmobile.ui.stations.StationsViewModel
 import com.rockmobile.ui.stations.PlayerScreen
@@ -35,21 +36,24 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val settings = SettingsRepository(this)
+        val unavailableVoiceStations = UnavailableVoiceStationStore(this)
         val repository = StationRepository(
             RockserverStationSource(RockserverApi(), settings::rockserverUrl, settings::bearerToken),
             RockcastAssetStationSource(assets),
         )
         setContent {
             RockmobileTheme {
-            val model: StationsViewModel = viewModel(factory = StationsViewModelFactory(repository))
+            val model: StationsViewModel = viewModel(factory = StationsViewModelFactory(repository, unavailableVoiceStations::unavailableStationIds))
             val state = model.state.collectAsStateWithLifecycle().value
-            val playback = androidx.compose.runtime.remember { PlaybackController(this) }
+            val playback = androidx.compose.runtime.remember { PlaybackController(this, unavailableVoiceStations) }
             val voice = androidx.compose.runtime.remember {
                 VoiceCommandController(
                     AndroidVoiceRecorder(), RockserverVoiceClient(), settings::rockserverUrl, settings::bearerToken,
                     object : VoicePlaybackActions {
+                        override fun beginVoiceCapture() = playback.beginVoiceCapture()
+                        override fun endVoiceCapture() = playback.endVoiceCapture()
                         override fun showCandidates(stations: List<com.rockmobile.domain.model.Station>) = model.showVoiceCandidates(stations)
-                        override fun play(station: com.rockmobile.domain.model.Station, queue: List<com.rockmobile.domain.model.Station>) = playback.play(station, queue)
+                        override fun play(station: com.rockmobile.domain.model.Station, queue: List<com.rockmobile.domain.model.Station>) = playback.play(station, queue, fromVoiceResult = true)
                     },
                     lifecycleScope,
                 )
@@ -73,6 +77,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private class StationsViewModelFactory(private val repository: StationRepository) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = StationsViewModel(repository) as T
+private class StationsViewModelFactory(
+    private val repository: StationRepository,
+    private val unavailableVoiceStationIds: () -> Set<String>,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        StationsViewModel(repository, unavailableVoiceStationIds = unavailableVoiceStationIds) as T
 }

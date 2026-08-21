@@ -29,6 +29,10 @@ fun filterStations(stations: List<Station>, filters: StationFilters) = stations.
         (filters.language == null || station.language.equals(filters.language, ignoreCase = true))
 }
 
+/** Keeps server ranking intact while moving locally known-broken voice streams to the end. */
+fun rankVoiceCandidates(candidates: List<Station>, unavailableIds: Set<String>): List<Station> =
+    candidates.sortedBy { station -> if (station.id in unavailableIds) 1 else 0 }
+
 sealed interface StationsUiState {
     data object Loading : StationsUiState
     data class Content(
@@ -45,6 +49,7 @@ sealed interface StationsUiState {
 class StationsViewModel(
     private val repository: StationRepository,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val unavailableVoiceStationIds: () -> Set<String> = { emptySet() },
 ) : ViewModel() {
     private val _state = MutableStateFlow<StationsUiState>(StationsUiState.Loading)
     val state: StateFlow<StationsUiState> = _state.asStateFlow()
@@ -65,13 +70,21 @@ class StationsViewModel(
         _state.value = content.copy(filters = transform(content.filters))
     }
 
-    /** Displays the ranked Rockserver candidates from a completed voice request. */
-    fun showVoiceCandidates(candidates: List<Station>) {
-        val content = _state.value as? StationsUiState.Content ?: return
-        if (candidates.isEmpty()) return
-        _state.value = content.copy(
-            catalogue = StationCatalogue(candidates, content.catalogue.source),
-            filters = StationFilters(),
-        )
+    /**
+     * Displays ranked Rockserver candidates and returns the first stream not known to be unavailable.
+     * The returned station is the only candidate that voice auto-play may start.
+     */
+    fun showVoiceCandidates(candidates: List<Station>): Station? {
+        if (candidates.isEmpty()) return null
+        val unavailableIds = unavailableVoiceStationIds()
+        val rankedCandidates = rankVoiceCandidates(candidates, unavailableIds)
+        val content = _state.value as? StationsUiState.Content
+        if (content != null) {
+            _state.value = content.copy(
+                catalogue = StationCatalogue(rankedCandidates, content.catalogue.source),
+                filters = StationFilters(),
+            )
+        }
+        return rankedCandidates.firstOrNull { it.id !in unavailableIds }
     }
 }

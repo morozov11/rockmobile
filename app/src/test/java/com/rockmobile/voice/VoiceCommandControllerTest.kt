@@ -24,10 +24,45 @@ class VoiceCommandControllerTest {
 
     @Test fun recordedStationMatch_startsPlayback_andReportsTranscript() = runTest {
         val played = mutableListOf<Station>()
-        val controller = controller(this, playback = { played += it })
+        val captureEvents = mutableListOf<String>()
+        val controller = controller(this, playback = { played += it }, captureEvents = captureEvents)
         controller.start(); advanceUntilIdle()
         assertEquals(listOf(station), played)
         assertEquals(VoiceUiState.Success("включи джаз", "Quiet Jazz"), controller.state.value)
+        assertEquals(listOf("begin", "end"), captureEvents)
+    }
+
+    @Test fun knownUnavailableSelectedStation_startsFirstAvailableCandidate() = runTest {
+        val unavailable = Station("offline", "Offline", "https://example.test/offline")
+        val available = Station("online", "Online", "https://example.test/online")
+        val played = mutableListOf<Station>()
+        val controller = controller(
+            this,
+            client = client { VoiceResolution.StationMatch("play radio", unavailable, listOf(unavailable, available)) },
+            playback = { played += it },
+            candidateSelector = { candidates -> candidates.firstOrNull { it.id != unavailable.id } },
+        )
+
+        controller.start(); advanceUntilIdle()
+
+        assertEquals(listOf(available), played)
+        assertEquals(VoiceUiState.Success("play radio", "Online"), controller.state.value)
+    }
+
+    @Test fun allKnownUnavailableCandidates_doNotStartPlayback() = runTest {
+        val unavailable = Station("offline", "Offline", "https://example.test/offline")
+        val played = mutableListOf<Station>()
+        val controller = controller(
+            this,
+            client = client { VoiceResolution.StationMatch("play radio", unavailable, listOf(unavailable)) },
+            playback = { played += it },
+            candidateSelector = { null },
+        )
+
+        controller.start(); advanceUntilIdle()
+
+        assertTrue(played.isEmpty())
+        assertEquals(VoiceUiState.NoPlayableStation("play radio"), controller.state.value)
     }
 
     @Test fun noMatch_networkAndMalformedFailures_doNotTouchPlayback() = runTest {
@@ -39,6 +74,19 @@ class VoiceCommandControllerTest {
         val malformed = controller(this, client = client { throw IllegalArgumentException("malformed response") }, playback = { played += it })
         malformed.start(); advanceUntilIdle(); assertTrue(malformed.state.value is VoiceUiState.RecoverableError)
         assertTrue(played.isEmpty())
+    }
+
+    @Test fun recordingCompletion_sendsAudioWithoutAnotherTap() = runTest {
+        val received = mutableListOf<ByteArray>()
+        val recorder = FakeRecorder()
+        val controller = controller(this, recorder = recorder, client = object : VoiceCommandClient {
+            override suspend fun resolve(baseUrl: String, bearerToken: String, audio: RecordedVoice, onTranscript: (String) -> Unit): VoiceResolution {
+                received += audio.pcmS16Le
+                return VoiceResolution.NoMatch("test")
+            }
+        })
+        controller.start(); advanceUntilIdle()
+        assertEquals(listOf<Byte>(1, 2), received.single().toList())
     }
 
     @Test fun cancelWhileRecording_releasesRecorder_andLeavesIdle() = runTest {
@@ -53,8 +101,12 @@ class VoiceCommandControllerTest {
         recorder: VoiceRecorder = FakeRecorder(),
         client: VoiceCommandClient = client { VoiceResolution.StationMatch("включи джаз", station, listOf(station)) },
         playback: (Station) -> Unit = {},
+        captureEvents: MutableList<String> = mutableListOf(),
+        candidateSelector: (List<Station>) -> Station? = { it.firstOrNull() },
     ) = VoiceCommandController(recorder, client, { "http://server.test" }, { "token" }, object : VoicePlaybackActions {
-        override fun showCandidates(stations: List<Station>) = Unit
+        override fun beginVoiceCapture() { captureEvents += "begin" }
+        override fun endVoiceCapture() { captureEvents += "end" }
+        override fun showCandidates(stations: List<Station>) = candidateSelector(stations)
         override fun play(station: Station, queue: List<Station>) = playback(station)
     }, scope, UnconfinedTestDispatcher())
 
