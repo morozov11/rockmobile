@@ -11,6 +11,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.rockmobile.data.api.RockserverApi
+import com.rockmobile.data.api.UrlConnectionTransport
+import com.rockmobile.data.api.WifiNetworkProvider
 import com.rockmobile.data.repository.StationRepository
 import com.rockmobile.data.stations.RockcastAssetStationSource
 import com.rockmobile.data.stations.RockserverStationSource
@@ -26,7 +28,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val settings = SettingsRepository(this)
         val repository = StationRepository(
-            RockserverStationSource(RockserverApi(), settings::rockserverUrl, settings::bearerToken),
+            RockserverStationSource(
+                RockserverApi(UrlConnectionTransport(WifiNetworkProvider(this))),
+                settings::rockserverUrl,
+                settings::bearerToken,
+            ),
             RockcastAssetStationSource(assets),
         )
         setContent {
