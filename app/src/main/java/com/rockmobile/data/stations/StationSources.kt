@@ -5,7 +5,6 @@ import com.rockmobile.data.api.RockserverApi
 import com.rockmobile.data.dto.parseRockserverStations
 import com.rockmobile.domain.model.Station
 import java.security.MessageDigest
-import android.util.Log
 
 interface RemoteStationSource { suspend fun load(): List<Station> }
 interface LocalStationSource { suspend fun load(): List<Station> }
@@ -15,12 +14,7 @@ class RockserverStationSource(
     private val baseUrl: () -> String,
     private val bearerToken: () -> String,
 ) : RemoteStationSource {
-    override suspend fun load(): List<Station> = try {
-        parseRockserverStations(api.search(baseUrl(), bearerToken()))
-    } catch (error: Throwable) {
-        Log.e("RockserverApi", "Catalogue parsing/request failed", error)
-        throw error
-    }
+    override suspend fun load(): List<Station> = parseRockserverStations(api.search(baseUrl(), bearerToken()))
 }
 
 /** Reads the unmodified RockCast text format, keeping the fallback traceable and editable. */
