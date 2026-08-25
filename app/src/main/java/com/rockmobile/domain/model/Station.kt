@@ -1,7 +1,7 @@
 package com.rockmobile.domain.model
 
 /** Source that supplied the catalogue currently shown to the listener. */
-enum class CatalogueSource { ROCKSERVER, BUNDLED }
+enum class CatalogueSource { ROCKSERVER, EXTENDED, BUNDLED }
 
 /** Playback-ready station independent of a transport DTO or Android UI type. */
 data class Station(

@@ -4,6 +4,7 @@ import com.rockmobile.data.stations.LocalStationSource
 import com.rockmobile.data.stations.RemoteStationSource
 import com.rockmobile.domain.model.CatalogueSource
 import com.rockmobile.domain.model.StationCatalogue
+import com.rockmobile.domain.model.Station
 import kotlinx.coroutines.CancellationException
 
 /** Remote-first catalogue policy. Stream errors never reach this layer, so they cannot trigger fallback. */
@@ -18,13 +19,17 @@ class StationRepository(private val remote: RemoteStationSource, private val loc
         try {
             val bundled = local.load()
             if (bundled.isEmpty()) throw EmptyCatalogueException("Bundled catalogue is empty")
-            CatalogueLoadResult.Fallback(StationCatalogue(bundled, CatalogueSource.BUNDLED), remoteFailure)
+            CatalogueLoadResult.Fallback(StationCatalogue(bundled, local.catalogueSource), remoteFailure)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (bundledFailure: Throwable) {
             CatalogueLoadResult.Fatal(remoteFailure, bundledFailure)
         }
     }
+
+    /** Extended SQLite search is available only after the extended snapshot was selected as fallback. */
+    suspend fun searchOffline(query: String, genre: String?, country: String?, language: String?): List<Station>? =
+        local.search(query, genre, country, language)
 }
 
 class EmptyCatalogueException(message: String) : IllegalStateException(message)

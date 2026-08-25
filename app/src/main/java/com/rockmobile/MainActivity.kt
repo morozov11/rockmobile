@@ -18,6 +18,8 @@ import androidx.compose.runtime.setValue
 import com.rockmobile.data.api.RockserverApi
 import com.rockmobile.data.repository.StationRepository
 import com.rockmobile.data.stations.RockcastAssetStationSource
+import com.rockmobile.data.stations.ExtendedCatalogStationSource
+import com.rockmobile.data.stations.FallbackLocalStationSource
 import com.rockmobile.data.stations.RockserverStationSource
 import com.rockmobile.playback.PlaybackController
 import com.rockmobile.settings.SettingsRepository
@@ -39,7 +41,10 @@ class MainActivity : ComponentActivity() {
         val unavailableVoiceStations = UnavailableVoiceStationStore(this)
         val repository = StationRepository(
             RockserverStationSource(RockserverApi(), settings::rockserverUrl, settings::bearerToken),
-            RockcastAssetStationSource(assets, unavailableVoiceStations::migrateLegacyIds),
+            FallbackLocalStationSource(
+                ExtendedCatalogStationSource(this),
+                RockcastAssetStationSource(assets, unavailableVoiceStations::migrateLegacyIds),
+            ),
         )
         setContent {
             RockmobileTheme {

@@ -58,6 +58,8 @@ Voice-сессия отправляет `start`, аудиоблоки и `commit
 
 [`app/src/main/assets/stations.v1.json`](app/src/main/assets/stations.v1.json) — bundled schema-v1 snapshot общего каталога. Приложение принимает только pinned release `2026.08.2` с SHA-256 `3fa20dca94fc059bd433a47b9fba9bb6d5e5e1aa2957a5ffb58b2a7b20b1d74d`; ID станции и primary stream берутся из JSON, а не вычисляются из URL.
 
+Единственный authoring source baseline — `C:\repos\rockcast-station-catalog`. Обновление делается только офлайн-командой `release_sync.py sync rockmobile` с последующим `verify`, а не ручным копированием. RockServer остаётся предпочтительным источником при доступности; без него приложение использует проверенный extended SQLite `2026.08.2-mobile.1` (SHA-256 `ad469d405f177d7e476cf9b3d9985497d0e2c6132ac0f3ce14485f4eab402073`), а при его ошибке — pinned curated baseline. Откат — pin предыдущих сохранённых immutable baseline и extended package той же процедурой.
+
 `stations.txt` сохранён только как исторический вход для проверяемой миграции и больше не читается приложением. При загрузке snapshot старые URL-derived значения из `rockmobile:…` сопоставляются с одобренными canonical ID для сохранённого списка недоступных voice-станций; неизвестные значения остаются нетронутыми на переходный релиз.
 
 ## Устройство проекта
@@ -65,6 +67,7 @@ Voice-сессия отправляет `start`, аудиоблоки и `commit
 ```text
 rockmobile/
 ├── app/src/main/assets/stations.v1.json # pinned v1 fallback-каталог
+├── app/src/main/assets/rockmobile-extended-2026.08.2-mobile.1.sqlite # проверенный offline SQLite
 ├── app/src/main/java/com/rockmobile/
 │   ├── data/                            # API, DTO, источники, repository
 │   ├── playback/                        # MediaSessionService и controller
@@ -81,7 +84,7 @@ rockmobile/
 ## Ограничения и планы
 
 - Пользовательский Settings Screen — RM-005.
-- Единый канонический каталог RockCast/Rockmobile/Rockserver — RM-004. Базовая v1-интеграция выполнена; extended SQLite export (~16k) ещё не передан RockServer и остаётся отдельным блокером расширенной offline-части.
+- Единый канонический каталог RockCast/Rockmobile/Rockserver — RM-004. Приложение также bundle-ит проверенный Room/SQLite export `2026.08.2-mobile.1` (16 825 active/playable stations); при его повреждении или несовместимости сохраняется curated v1 baseline.
 - Голосовой поиск требует работающего Rockserver и Speech-to-Text на нём; клиент не хранит учётные данные SpeechKit.
 
 Полный план: [ROADMAP.md](ROADMAP.md).

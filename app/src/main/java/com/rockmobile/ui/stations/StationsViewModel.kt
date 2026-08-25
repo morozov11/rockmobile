@@ -67,7 +67,19 @@ class StationsViewModel(
 
     fun updateFilters(transform: (StationFilters) -> StationFilters) {
         val content = _state.value as? StationsUiState.Content ?: return
-        _state.value = content.copy(filters = transform(content.filters))
+        val filters = transform(content.filters)
+        _state.value = content.copy(filters = filters)
+        if (content.catalogue.source == com.rockmobile.domain.model.CatalogueSource.EXTENDED) {
+            viewModelScope.launch {
+                val results = withContext(ioDispatcher) {
+                    repository.searchOffline(filters.query, filters.genre, filters.country, filters.language)
+                } ?: return@launch
+                val current = _state.value as? StationsUiState.Content ?: return@launch
+                if (current.catalogue.source == com.rockmobile.domain.model.CatalogueSource.EXTENDED && current.filters == filters) {
+                    _state.value = current.copy(catalogue = StationCatalogue(results, current.catalogue.source))
+                }
+            }
+        }
     }
 
     /**

@@ -5,12 +5,18 @@ import com.rockmobile.data.api.RockserverApi
 import com.rockmobile.data.dto.parseRockserverStations
 import com.rockmobile.domain.model.Station
 import com.rockmobile.domain.model.StationStream
+import com.rockmobile.domain.model.CatalogueSource
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
 
 interface RemoteStationSource { suspend fun load(): List<Station> }
-interface LocalStationSource { suspend fun load(): List<Station> }
+interface LocalStationSource {
+    val catalogueSource: CatalogueSource get() = CatalogueSource.BUNDLED
+    suspend fun load(): List<Station>
+    suspend fun search(query: String, genre: String?, country: String?, language: String?): List<Station>? = null
+}
 
 class RockserverStationSource(
     private val api: RockserverApi,
@@ -37,6 +43,24 @@ class RockcastAssetStationSource(
         const val PINNED_CATALOG_VERSION = "2026.08.2"
         const val PINNED_SHA256 = "3fa20dca94fc059bd433a47b9fba9bb6d5e5e1aa2957a5ffb58b2a7b20b1d74d"
     }
+}
+
+/** Uses the extended catalog when its whole release gate succeeds, otherwise preserves baseline radio. */
+class FallbackLocalStationSource(
+    private val extended: LocalStationSource,
+    private val baseline: LocalStationSource,
+) : LocalStationSource {
+    private var active: LocalStationSource = baseline
+    override val catalogueSource get() = active.catalogueSource
+    override suspend fun load(): List<Station> = try {
+        extended.load().also { active = extended }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Throwable) {
+        baseline.load().also { active = baseline }
+    }
+    override suspend fun search(query: String, genre: String?, country: String?, language: String?) =
+        active.search(query, genre, country, language)
 }
 
 internal data class SharedCatalogStation(val station: Station, val legacyIds: List<String>)
