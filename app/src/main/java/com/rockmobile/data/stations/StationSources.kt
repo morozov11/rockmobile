@@ -6,6 +6,7 @@ import com.rockmobile.data.dto.parseRockserverStations
 import com.rockmobile.domain.model.Station
 import com.rockmobile.domain.model.StationStream
 import com.rockmobile.domain.model.CatalogueSource
+import com.rockmobile.data.personal.LocalCatalogIndex
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -31,6 +32,25 @@ class RockcastAssetStationSource(
     private val assets: AssetManager,
     private val migrateLegacyIds: (Map<String, String>) -> Unit = {},
 ) : LocalStationSource {
+    /** Returns the same checksum-pinned baseline identity/lifecycle snapshot used for playback. */
+    fun personalCatalogIndex(): LocalCatalogIndex {
+        val bytes = assets.open(ASSET_NAME).use { it.readBytes() }
+        val stations = parseSharedCatalog(bytes, PINNED_CATALOG_VERSION, PINNED_SHA256)
+        val root = JSONObject(bytes.toString(Charsets.UTF_8))
+        val merged = mutableMapOf<String, String>(); val splits = mutableMapOf<String, List<String>>(); val removed = mutableSetOf<String>()
+        val tombstones = root.getJSONArray("tombstones")
+        for (index in 0 until tombstones.length()) {
+            val item = tombstones.getJSONObject(index); val id = item.requiredText("id")
+            val replacements = item.optJSONArray("replacementIds").requiredStrings("replacementIds")
+            when (item.requiredText("reason")) {
+                "merged" -> if (replacements.size == 1) merged[id] = replacements.single() else removed += id
+                "split" -> splits[id] = replacements
+                "removed" -> removed += id
+                else -> error("Unknown tombstone reason")
+            }
+        }
+        return LocalCatalogIndex(stations.map { it.station.id }.toSet(), stations.flatMap { value -> value.legacyIds.map { it to value.station.id } }.toMap(), merged, splits, removed, PINNED_CATALOG_VERSION)
+    }
     override suspend fun load(): List<Station> {
         val bytes = assets.open(ASSET_NAME).use { it.readBytes() }
         val stations = parseSharedCatalog(bytes, PINNED_CATALOG_VERSION, PINNED_SHA256)

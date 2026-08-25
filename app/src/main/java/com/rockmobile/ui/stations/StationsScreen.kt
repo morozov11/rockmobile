@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rockmobile.domain.model.Station
+import com.rockmobile.data.personal.PersonalData
 import com.rockmobile.R
 import com.rockmobile.playback.PlaybackState
 import com.rockmobile.voice.VoiceUiState
@@ -99,6 +100,8 @@ fun StationsScreen(
     onCancelVoice: () -> Unit,
     onDismissVoice: () -> Unit,
     openPlayer: () -> Unit,
+    personal: PersonalData,
+    toggleFavourite: (Station) -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(
@@ -116,6 +119,7 @@ fun StationsScreen(
                 is StationsUiState.Content -> {
                     state.fallbackReason?.let { FallbackBanner(it) }
                     CatalogueHeader(state.catalogue.source.name, state.stations.size)
+                    PersonalSummary(personal, state.catalogue.stations, play)
                     SearchAndFilters(state, voice, updateFilters, onVoice, onFinishVoice, onCancelVoice)
                     VoiceStatusBar(voice, onCancelVoice, onDismissVoice)
                     MiniPlayer(playback, toggle, openPlayer)
@@ -125,9 +129,23 @@ fun StationsScreen(
                         stations = state.stations,
                         currentStationId = playback.station?.id,
                         play = { station -> play(station, state.stations) },
+                        favourites = personal.favourites.map { it.stationId }.toSet(),
+                        toggleFavourite = toggleFavourite,
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PersonalSummary(data: PersonalData, stations: List<Station>, play: (Station, List<Station>) -> Unit) {
+    val byId = stations.associateBy { it.id }
+    val favourites = data.favourites.mapNotNull { byId[it.stationId] }
+    if (favourites.isNotEmpty() || data.history.isNotEmpty()) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = false, onClick = { favourites.firstOrNull()?.let { play(it, favourites) } }, label = { Text("Favourites ${favourites.size}") })
+            FilterChip(selected = false, onClick = { data.history.firstNotNullOfOrNull { byId[it.stationId] }?.let { play(it, stations) } }, label = { Text("History ${data.history.size}") })
         }
     }
 }
@@ -332,7 +350,7 @@ private fun FilterMenu(label: String, values: List<String>, selected: String?, s
 }
 
 @Composable
-private fun StationTable(modifier: Modifier = Modifier, stations: List<Station>, currentStationId: String?, play: (Station) -> Unit) {
+private fun StationTable(modifier: Modifier = Modifier, stations: List<Station>, currentStationId: String?, play: (Station) -> Unit, favourites: Set<String>, toggleFavourite: (Station) -> Unit) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
@@ -344,7 +362,7 @@ private fun StationTable(modifier: Modifier = Modifier, stations: List<Station>,
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp)) {
                 itemsIndexed(stations, key = { _, station -> station.id }) { index, station ->
-                    StationRow(station, currentStationId == station.id, index) { play(station) }
+                    StationRow(station, currentStationId == station.id, index, station.id in favourites, { play(station) }) { toggleFavourite(station) }
                 }
             }
         }
@@ -385,7 +403,7 @@ private fun MiniPlayer(state: PlaybackState, toggle: () -> Unit, openPlayer: () 
 }
 
 @Composable
-private fun StationRow(station: Station, current: Boolean, index: Int, play: () -> Unit) {
+private fun StationRow(station: Station, current: Boolean, index: Int, favourite: Boolean, play: () -> Unit, toggleFavourite: () -> Unit) {
     val rowColor = when {
         current -> MaterialTheme.colorScheme.primary
         index % 2 == 1 -> MaterialTheme.colorScheme.background.copy(alpha = .32f)
@@ -402,6 +420,9 @@ private fun StationRow(station: Station, current: Boolean, index: Int, play: () 
         Text(listOfNotNull(station.bitrateKbps?.let { "$it k" }, station.codec).joinToString(" / ").ifBlank { "—" }, color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(.75f))
         IconButton(onClick = play, modifier = Modifier.size(40.dp)) {
             Icon(Icons.Default.PlayArrow, "Play ${station.name}", tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
+        }
+        IconButton(onClick = toggleFavourite, modifier = Modifier.size(36.dp)) {
+            Text(if (favourite) "★" else "☆", color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
         }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .45f))

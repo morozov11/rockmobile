@@ -24,6 +24,7 @@ import com.rockmobile.data.stations.RockserverStationSource
 import com.rockmobile.playback.PlaybackController
 import com.rockmobile.settings.SettingsRepository
 import com.rockmobile.settings.UnavailableVoiceStationStore
+import com.rockmobile.data.personal.PersonalDataStore
 import com.rockmobile.ui.stations.StationsScreen
 import com.rockmobile.ui.stations.StationsViewModel
 import com.rockmobile.ui.stations.PlayerScreen
@@ -39,17 +40,21 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val settings = SettingsRepository(this)
         val unavailableVoiceStations = UnavailableVoiceStationStore(this)
+        val personalData = PersonalDataStore(this)
+        val baseline = RockcastAssetStationSource(assets, unavailableVoiceStations::migrateLegacyIds)
+        personalData.reconcile(baseline.personalCatalogIndex())
         val repository = StationRepository(
             RockserverStationSource(RockserverApi(), settings::rockserverUrl, settings::bearerToken),
             FallbackLocalStationSource(
                 ExtendedCatalogStationSource(this),
-                RockcastAssetStationSource(assets, unavailableVoiceStations::migrateLegacyIds),
+                baseline,
             ),
         )
         setContent {
             RockmobileTheme {
             val model: StationsViewModel = viewModel(factory = StationsViewModelFactory(repository, unavailableVoiceStations::unavailableStationIds))
             val state = model.state.collectAsStateWithLifecycle().value
+            val personal = personalData.state.collectAsStateWithLifecycle().value
             val playback = androidx.compose.runtime.remember { PlaybackController(this, unavailableVoiceStations) }
             val voice = androidx.compose.runtime.remember {
                 VoiceCommandController(
@@ -58,7 +63,7 @@ class MainActivity : ComponentActivity() {
                         override fun beginVoiceCapture() = playback.beginVoiceCapture()
                         override fun endVoiceCapture() = playback.endVoiceCapture()
                         override fun showCandidates(stations: List<com.rockmobile.domain.model.Station>) = model.showVoiceCandidates(stations)
-                        override fun play(station: com.rockmobile.domain.model.Station, queue: List<com.rockmobile.domain.model.Station>) = playback.play(station, queue, fromVoiceResult = true)
+                        override fun play(station: com.rockmobile.domain.model.Station, queue: List<com.rockmobile.domain.model.Station>) { personalData.recordPlay(station, "remote"); playback.play(station, queue, fromVoiceResult = true) }
                     },
                     lifecycleScope,
                 )
@@ -71,12 +76,13 @@ class MainActivity : ComponentActivity() {
             val playbackState = playback.state.collectAsStateWithLifecycle().value
             val voiceState = voice.state.collectAsStateWithLifecycle().value
             if (playerScreen) PlayerScreen(playbackState, { playerScreen = false }, playback::toggle, playback::skipToPrevious, playback::skipToNext, playback::retry)
-            else StationsScreen(state, playbackState, voiceState, model::retryRockserver, model::updateFilters, playback::play, playback::toggle,
+            else StationsScreen(state = state, playback = playbackState, voice = voiceState, retry = model::retryRockserver, updateFilters = model::updateFilters, play = { station, queue -> personalData.recordPlay(station, "catalog"); playback.play(station, queue) }, toggle = playback::toggle,
                 onVoice = {
                     if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) voice.start()
                     else { voice.requestPermission(); microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
                 }, onFinishVoice = voice::finishRecording, onCancelVoice = voice::cancel, onDismissVoice = voice::dismiss,
-            ) { playerScreen = true }
+                openPlayer = { playerScreen = true }, personal = personal, toggleFavourite = { station -> personalData.toggleFavourite(station) },
+            )
             }
         }
     }
