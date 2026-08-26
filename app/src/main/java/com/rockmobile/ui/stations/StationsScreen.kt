@@ -1,6 +1,5 @@
 package com.rockmobile.ui.stations
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -72,6 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -79,12 +79,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rockmobile.domain.model.Station
 import com.rockmobile.data.personal.PersonalData
+import com.rockmobile.data.stations.StationIconLoader
 import com.rockmobile.R
 import com.rockmobile.playback.PlaybackState
 import com.rockmobile.voice.VoiceUiState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.net.URL
 
 @Composable
 fun StationsScreen(
@@ -473,8 +473,16 @@ fun PlayerScreen(state: PlaybackState, back: () -> Unit, toggle: () -> Unit, pre
 /** Network artwork is optional; failed favicons leave a stable RockCast tile. */
 @Composable
 private fun StationLogo(station: Station, modifier: Modifier = Modifier) {
-    val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(initialValue = null, station.faviconUrl) {
-        value = station.faviconUrl?.let { url -> withContext(Dispatchers.IO) { runCatching { URL(url).openConnection().apply { connectTimeout = 4_000; readTimeout = 4_000 }.getInputStream().use(BitmapFactory::decodeStream)?.asImageBitmap() }.getOrNull() } }
+    val context = LocalContext.current
+    val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(
+        initialValue = null,
+        station.id,
+        station.faviconUrl,
+        station.homepageUrl,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            StationIconLoader.loadOrFetch(context.applicationContext, station)?.asImageBitmap()
+        }
     }
     Box(modifier.clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
         if (bitmap != null) Image(bitmap!!, contentDescription = "${station.name} logo", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)

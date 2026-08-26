@@ -16,7 +16,7 @@ Android-клиент интернет-радио для RockCast. Он рабо�
 
 - Android 8.0 (API 26) или новее.
 - Android SDK с `compileSdk 36` для сборки.
-- Для server-каталога и голосового поиска — доступный Rockserver и bearer-токен.
+- Для server-каталога и голосового поиска — сеть до официального Rockserver `https://alex.vault57.ru`.
 
 ## Быстрый старт для разработки
 
@@ -45,14 +45,16 @@ APK: `app/build/outputs/apk/debug/`.
 
 ## Rockserver
 
+Официальные сборки используют публичный RockServer `https://alex.vault57.ru` без пользовательской настройки URL/токена. Публичные операции `/v1/*` вызываются без Bearer; legacy LAN-дефолты и bootstrap-токен сбрасываются при загрузке настроек.
+
 | Назначение | Контракт |
 | --- | --- |
-| Каталог | `POST /v1/search`, JSON с `query`, `locale`, `limit`; `Authorization: Bearer <token>` |
-| Голосовой поиск | WebSocket `/api/v1/voice/stream`; PCM S16LE, mono, 16 kHz; `Authorization: Bearer <token>` |
+| Каталог | `POST /v1/search`, JSON с `query`, `locale`, `limit`; без Authorization |
+| Голосовой поиск | WebSocket `/v1/voice/stream`; PCM S16LE, mono, 16 kHz; без Authorization |
 
-Voice-сессия отправляет `start`, аудиоблоки и `commit`. Клиент принимает только структурированный и валидный результат со станцией и HTTP(S)-потоком; неизвестные или некорректные ответы не выполняются.
+Voice-сессия: `start` → `ready` → PCM-чанки ≤32 KiB → `commit`. Клиент принимает только структурированный и валидный результат со станцией и HTTP(S)-потоком; неизвестные или некорректные ответы не выполняются. HTTPS всегда мапится на WSS с сохранением TLS. Search использует `limit≤20`.
 
-Адрес и токен хранятся в `SettingsRepository`. Текущая настройка предназначена для разработки: перед production-распространением нужны Settings Screen и отказ от общего bootstrap-токена. Для эмулятора хост доступен по `http://10.0.2.2:3000`; для физического устройства нужен LAN-адрес сервера.
+Адрес по умолчанию хранится в `SettingsRepository` как `https://alex.vault57.ru`. Необязательный bearer по-прежнему можно задать через `updateRockserver` для отладки; на публичные `/v1` токен не требуется. Settings Screen — RM-005.
 
 ## Каталог станций
 
@@ -73,7 +75,7 @@ rockmobile/
 │   ├── playback/                        # MediaSessionService и controller
 │   ├── ui/stations/                     # Compose UI и ViewModel
 │   ├── voice/                           # запись, VAD, WebSocket, команды
-│   └── settings/                        # URL и bearer-токен
+│   └── settings/                        # официальный RockServer URL
 ├── app/src/test/                        # unit-тесты
 ├── docs/                                # документация для разработки
 └── ROADMAP.md

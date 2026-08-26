@@ -150,7 +150,8 @@ private fun decode(root: JSONObject): PersonalData {
 }
 
 private fun decodeLegacy(root: JSONObject): PersonalData {
-    fun time(v: Long) = Instant.ofEpochMilli(v).toString(); fun array(k: String) = root.optJSONArray(k) ?: JSONArray()
+    fun time(v: Long) = Instant.ofEpochMilli(v).toString()
+    fun array(k: String) = root.optJSONArray(k) ?: JSONArray()
     val favourites = List(array("favourites").length()) { i -> array("favourites").getJSONObject(i).let { Favourite(it.getString("recordId"), canonical(it.getString("stationId")), time(it.getLong("addedAt")), time(it.getLong("updatedAt")), it.text("name")) } }
     val history = List(array("history").length()) { i -> array("history").getJSONObject(i).let { HistoryEntry(it.getString("recordId"), canonical(it.getString("stationId")), time(it.getLong("startedAt")), time(it.getLong("lastPlayedAt")), if (it.isNull("endedAt")) null else time(it.getLong("endedAt")), it.optLong("duration"), it.text("name"), source = it.text("source")) } }
     val unresolved = List(array("unresolved").length()) { i -> array("unresolved").getJSONObject(i).let { UnresolvedReference(it.getString("referenceId"), it.getString("sourceKind"), it.getString("originalStationId"), time(it.getLong("firstSeenAt")), it.getString("reason"), it.optJSONArray("candidates")?.let { a -> List(a.length()) { a.getString(it) } }.orEmpty(), it.text("name")) } }

@@ -36,7 +36,7 @@ class RockserverApi(
 ) {
     fun search(baseUrl: String, bearerToken: String, query: String = "rock"): String {
         val endpoint = baseUrl.trim().trimEnd('/') + "/v1/search"
-        val request = JSONObject().put("query", query).put("locale", "en-US").put("limit", 50)
+        val request = JSONObject().put("query", query).put("locale", "en-US").put("limit", 20)
         val response = transport.post(endpoint, bearerToken, request.toString())
         if (response.code !in 200..299) throw RockserverHttpException(response.code)
         return response.body

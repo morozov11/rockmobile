@@ -11,8 +11,10 @@ class RockserverVoiceEventTest {
         var transcript = ""
         assertNull(parseRockserverVoiceEvent("""{"type":"transcript","request_id":"r","transcript":"включи джаз","is_final":false}""") { transcript = it })
         assertEquals("включи джаз", transcript)
-        val result = parseRockserverVoiceEvent("""{"type":"result","request_id":"r","transcript":"включи джаз","normalized_query":{"original":"x","locale":"ru-RU","terms":[],"tags":[],"language":null,"country_code":null},"selected_station":{"id":"jazz","name":"Quiet Jazz","stream_url":"https://example.test/jazz","tags":["jazz"],"country_code":"US","language":"en","codec":"MP3","bitrate_kbps":128,"homepage_url":null},"stations":[]}""") {}
+        val result = parseRockserverVoiceEvent("""{"type":"result","request_id":"r","transcript":"включи джаз","normalized_query":{"original":"x","locale":"ru-RU","terms":[],"tags":[],"language":null,"country_code":null},"selected_station":{"id":"jazz","name":"Quiet Jazz","stream_url":"https://example.test/jazz","tags":["jazz"],"country_code":"US","language":"en","codec":"MP3","bitrate_kbps":128,"homepage_url":"https://jazz.example.test","favicon_url":"https://jazz.example.test/logo.png"},"stations":[]}""") {}
         assertEquals("Quiet Jazz", (result as VoiceResolution.StationMatch).selected.name)
+        assertEquals("https://jazz.example.test", result.selected.homepageUrl)
+        assertEquals("https://jazz.example.test/logo.png", result.selected.faviconUrl)
         val noMatch = parseRockserverVoiceEvent("""{"type":"result","request_id":"r","transcript":"ничего","normalized_query":{},"selected_station":null,"stations":[]}""") {}
         assertEquals(VoiceResolution.NoMatch("ничего"), noMatch)
     }
@@ -24,5 +26,20 @@ class RockserverVoiceEventTest {
         catch (_: IllegalArgumentException) { }
         try { parseRockserverVoiceEvent("""{"type":"pause"}""") {}; throw AssertionError("expected exception") }
         catch (_: IllegalArgumentException) { assertTrue(true) }
+    }
+
+    @Test fun voiceStreamUrl_preservesTlsAndUsesPublicPath() {
+        assertEquals("wss://alex.vault57.ru/v1/voice/stream", voiceStreamUrl("https://alex.vault57.ru"))
+        assertEquals("wss://alex.vault57.ru/v1/voice/stream", voiceStreamUrl("https://alex.vault57.ru/"))
+        assertEquals("ws://127.0.0.1:3000/v1/voice/stream", voiceStreamUrl("http://127.0.0.1:3000"))
+    }
+
+    @Test fun voiceStartMessage_matchesPublicBufferedContract() {
+        val start = org.json.JSONObject(voiceStartMessage(16_000))
+        assertEquals("start", start.getString("type"))
+        assertEquals("ru-RU", start.getString("locale"))
+        assertEquals(16_000, start.getInt("sample_rate_hz"))
+        assertEquals("buffered_v1", start.getString("recognizer_mode"))
+        assertEquals(10, start.getInt("limit"))
     }
 }

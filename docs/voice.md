@@ -23,9 +23,9 @@ Mic tap → RECORD_AUDIO permission → recording (pulsing button)
 
 ## Протокол Rockserver
 
-1. WebSocket `ws(s)://<host>/api/v1/voice/stream` с `Authorization: Bearer <token>` при наличии токена.
+1. WebSocket `wss://alex.vault57.ru/v1/voice/stream` (HTTPS→WSS). Публичный endpoint без Bearer; токен добавляется только если явно задан в настройках.
 2. JSON `start`: `locale=ru-RU`, `sample_rate_hz=16000`, `recognizer_mode=buffered_v1`, `limit=10`.
-3. Бинарные PCM-фрагменты до 65 536 байт, затем JSON `commit`.
+3. Дождаться `ready`, затем бинарные PCM-фрагменты **не больше 32 KiB**, затем JSON `commit`.
 4. События: `ready`, `transcript`, `result`, `error`.
 
 `result` обязан содержать transcript и выбранную станцию с `id`, `name`, `stream_url`. Разрешены только HTTP(S)-URL. Unknown event, malformed JSON и небезопасные данные становятся recoverable error и не управляют плеером.

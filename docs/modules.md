@@ -6,9 +6,10 @@
 | `data/api/RockserverApi.kt` | HTTP boundary серверного каталога |
 | `data/dto/RockserverDtos.kt` | Строгий разбор station JSON |
 | `data/stations/StationSources.kt` | Rockserver и bundled RockCast источники |
+| `data/stations/StationIconLoader.kt` | Bounded fetch/decode/cache иконок станций |
 | `data/repository/StationRepository.kt` | Remote-first и fallback policy |
 | `domain/model/Station.kt` | Независимая модель станции и каталога |
-| `settings/SettingsRepository.kt` | Локальные URL и bearer-токен |
+| `settings/SettingsRepository.kt` | Официальный RockServer URL; optional bearer для отладки |
 | `settings/UnavailableVoiceStationStore.kt` | Локальная память voice-станций с недоступным потоком |
 | `ui/stations/StationsViewModel.kt` | Каталог, фильтры и voice-кандидаты |
 | `ui/stations/StationsScreen.kt` | Compose-каталог, MiniPlayer, Player Screen |

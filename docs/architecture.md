@@ -17,6 +17,14 @@ StationsScreen ── VoiceCommandController ── VoiceRecorder / RockserverVo
 
 Фильтрация существует только в `StationsViewModel` и работает с общей моделью `Station`. Voice-result заменяет видимый список ранжированными кандидатами Rockserver и сразу запускает выбранную станцию.
 
+## Иконки станций (MVP)
+
+При наличии валидного `faviconUrl` клиент загружает изображение напрямую; иначе — обычный `/favicon.ico` с официального `homepageUrl` (без HTML-scrape). Fetch, decode и disk-cache (`cacheDir/station-icons`) выполняются вне UI; лимиты — 512 KiB на wire и thumbnail ≤ 64px. Ошибки оставляют letter-tile.
+
+## Официальный RockServer
+
+Release-клиент использует `https://alex.vault57.ru`. Публичные `POST /v1/search` и `wss://…/v1/voice/stream` идут без Bearer. Legacy LAN/emulator URL и bootstrap-токен scrub'ятся при старте `SettingsRepository`.
+
 ## Воспроизведение
 
 `PlaybackController` — activity-scoped proxy к `MediaController`; он строит очередь и публикует `PlaybackState`. Единственный владелец ExoPlayer — `RockmobileMediaSessionService`, поэтому радио продолжает играть в фоне, а Media3 обслуживает notification, Bluetooth и lock screen.

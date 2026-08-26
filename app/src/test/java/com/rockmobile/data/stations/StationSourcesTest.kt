@@ -51,6 +51,14 @@ class StationSourcesTest {
         assertEquals("station-rock-001", source.load().single().id)
     }
 
+    @Test fun remote_search_usesPublicLimitCap() {
+        val transport = CapturingTransport(200, validJson)
+        RockserverApi(transport).search("https://alex.vault57.ru", "")
+        assertEquals("https://alex.vault57.ru/v1/search", transport.url)
+        assertEquals("", transport.bearerToken)
+        assertEquals(20, org.json.JSONObject(transport.body).getInt("limit"))
+    }
+
     @Test fun remote_malformedAndEmptyResponses_areRejected() = runTest {
         val malformed = RockserverStationSource(RockserverApi(FakeTransport(200, "{}")), { "http://server" }, { "token" })
         val empty = RockserverStationSource(RockserverApi(FakeTransport(200, "{\"stations\":[]}")), { "http://server" }, { "token" })
@@ -68,6 +76,17 @@ class StationSourcesTest {
 
     private class FakeTransport(private val code: Int, private val body: String) : HttpTransport {
         override fun post(url: String, bearerToken: String, jsonBody: String) = HttpResponse(code, body)
+    }
+    private class CapturingTransport(private val code: Int, private val responseBody: String) : HttpTransport {
+        lateinit var url: String
+        lateinit var bearerToken: String
+        lateinit var body: String
+        override fun post(url: String, bearerToken: String, jsonBody: String): HttpResponse {
+            this.url = url
+            this.bearerToken = bearerToken
+            this.body = jsonBody
+            return HttpResponse(code, responseBody)
+        }
     }
     private fun catalog(value: String) = value.toByteArray()
     private fun sha256(value: ByteArray) = MessageDigest.getInstance("SHA-256").digest(value).joinToString("") { "%02x".format(it) }
