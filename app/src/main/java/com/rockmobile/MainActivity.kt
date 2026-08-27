@@ -33,6 +33,10 @@ import com.rockmobile.voice.AndroidVoiceRecorder
 import com.rockmobile.voice.RockserverVoiceClient
 import com.rockmobile.voice.VoiceCommandController
 import com.rockmobile.voice.VoicePlaybackActions
+import com.rockmobile.account.AccountDialog
+import com.rockmobile.account.AccountViewModel
+import com.rockmobile.account.KeystoreCredentialStore
+import com.rockmobile.account.RockserverAccountGateway
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,6 +57,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             RockmobileTheme {
             val model: StationsViewModel = viewModel(factory = StationsViewModelFactory(repository, unavailableVoiceStations::unavailableStationIds))
+            val account: AccountViewModel = viewModel(factory = AccountViewModelFactory(RockserverAccountGateway(RockserverApi(), settings::rockserverUrl), KeystoreCredentialStore(applicationContext)))
             val state = model.state.collectAsStateWithLifecycle().value
             val personal = personalData.state.collectAsStateWithLifecycle().value
             val playback = androidx.compose.runtime.remember { PlaybackController(this, unavailableVoiceStations) }
@@ -72,6 +77,7 @@ class MainActivity : ComponentActivity() {
                 voice.permissionResult(granted, !granted && !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO))
             }
             var playerScreen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+            var accountOpen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
             androidx.compose.runtime.DisposableEffect(Unit) { onDispose { voice.cancel(); playback.release() } }
             val playbackState = playback.state.collectAsStateWithLifecycle().value
             val voiceState = voice.state.collectAsStateWithLifecycle().value
@@ -81,8 +87,9 @@ class MainActivity : ComponentActivity() {
                     if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) voice.start()
                     else { voice.requestPermission(); microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
                 }, onFinishVoice = voice::finishRecording, onCancelVoice = voice::cancel, onDismissVoice = voice::dismiss,
-                openPlayer = { playerScreen = true }, personal = personal, toggleFavourite = { station -> personalData.toggleFavourite(station) },
+                openPlayer = { playerScreen = true }, personal = personal, toggleFavourite = { station -> personalData.toggleFavourite(station) }, openAccount = { accountOpen = true },
             )
+            if (accountOpen) AccountDialog(account, settings.rockserverUrl()) { accountOpen = false }
             }
         }
     }
@@ -94,4 +101,11 @@ private class StationsViewModelFactory(
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T =
         StationsViewModel(repository, unavailableVoiceStationIds = unavailableVoiceStationIds) as T
+}
+
+private class AccountViewModelFactory(
+    private val gateway: RockserverAccountGateway,
+    private val store: KeystoreCredentialStore,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = AccountViewModel(gateway, store) as T
 }

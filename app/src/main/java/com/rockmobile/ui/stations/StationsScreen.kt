@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -102,6 +103,7 @@ fun StationsScreen(
     openPlayer: () -> Unit,
     personal: PersonalData,
     toggleFavourite: (Station) -> Unit,
+    openAccount: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(
@@ -111,7 +113,7 @@ fun StationsScreen(
                 .imePadding()
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            RockHeader(retry)
+            RockHeader(retry, openAccount)
             Spacer(Modifier.height(6.dp))
             when (state) {
                 StationsUiState.Loading -> LoadingState()
@@ -182,7 +184,7 @@ private fun VoiceStatusBar(state: VoiceUiState, cancel: () -> Unit, dismiss: () 
 }
 
 @Composable
-private fun RockHeader(retry: () -> Unit) {
+private fun RockHeader(retry: () -> Unit, openAccount: () -> Unit) {
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -202,8 +204,11 @@ private fun RockHeader(retry: () -> Unit) {
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        IconButton(onClick = retry) {
-            Icon(Icons.Default.Refresh, "Refresh catalogue", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row {
+            IconButton(onClick = openAccount) { Icon(Icons.Default.Person, "Account and devices", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            IconButton(onClick = retry) {
+                Icon(Icons.Default.Refresh, "Refresh catalogue", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
