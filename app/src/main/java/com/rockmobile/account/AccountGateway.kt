@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 interface AccountGateway {
     fun createPairing(deviceName: String): PairingRequest
-    /** 401 means browser approval has not happened yet; the request body contains only desktop_token. */
+    /** 202 means browser approval has not happened yet; the request body contains only desktop_token. */
     fun completePairing(pairing: PairingRequest): Pair<AccountProfile, NativeCredentials>
     fun refresh(refreshToken: String): NativeCredentials
     fun profile(accessToken: String): AccountProfile
@@ -38,6 +38,7 @@ class RockserverAccountGateway(private val api: RockserverApi, private val baseU
 
     override fun completePairing(pairing: PairingRequest): Pair<AccountProfile, NativeCredentials> {
         val response = api.post(baseUrl(), "/v1/pairing-requests/${pairing.requestId}/complete", body = pairing.completionBody())
+        if (response.code == 202) throw RockserverHttpException(202)
         requireSuccess(response.code)
         return completion(JSONObject(response.body))
     }

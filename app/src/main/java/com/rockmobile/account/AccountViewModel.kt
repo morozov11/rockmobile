@@ -20,7 +20,7 @@ private const val DEFAULT_PAIRING_TIMEOUT_MS = 10 * 60 * 1000L
 private const val DEFAULT_PAIRING_POLL_MS = 2_000L
 
 internal fun shouldContinuePairing(error: Throwable, nowMs: Long, deadlineMs: Long): Boolean =
-    error is RockserverHttpException && error.statusCode == 401 && nowMs < deadlineMs
+    error is RockserverHttpException && error.statusCode == 202 && nowMs < deadlineMs
 
 class AccountViewModel(
     private val gateway: AccountGateway,
@@ -171,6 +171,7 @@ class AccountViewModel(
         while (pendingPairing == pending && nowMs() < pending.deadlineMs) {
             try {
                 val result = withContext(ioDispatcher) { gateway.completePairing(pending.request) }
+                if (pendingPairing != pending) return
                 withContext(ioDispatcher) {
                     store.save(result.second)
                     store.saveProfile(result.first)
@@ -201,7 +202,7 @@ class AccountViewModel(
 
     private fun pairingErrorMessage(error: Throwable, deadlineReached: Boolean = false): String = when {
         deadlineReached -> "Срок действия подключения истёк. Начните подключение заново."
-        error is RockserverHttpException && error.statusCode == 409 -> "Этот телефон уже подключён к аккаунту."
+        error is RockserverHttpException && error.statusCode == 409 -> "Достигнут лимит устройств аккаунта. Отключите старое устройство и попробуйте снова."
         error is RockserverHttpException && error.statusCode in 404..410 -> "Запрос подключения больше недоступен. Создайте новый."
         error is RockserverHttpException && error.statusCode >= 500 -> "RockServer сейчас недоступен. Радио продолжает работать без сервера."
         error is IOException -> "RockServer сейчас недоступен. Радио продолжает работать без сервера."

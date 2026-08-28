@@ -64,8 +64,13 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val close = {
+        if (state is AccountUiState.Pairing) viewModel.cancelPairing()
+        dismiss()
+    }
+
     AlertDialog(
-        onDismissRequest = dismiss,
+        onDismissRequest = close,
         title = { Text(dialogTitle(state)) },
         text = {
             Column(
@@ -159,7 +164,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                 }
             }
         },
-        confirmButton = { TextButton(onClick = dismiss) { Text("Закрыть") } },
+        confirmButton = { TextButton(onClick = close) { Text("Закрыть") } },
     )
 
     deviceToRevoke?.let { device ->

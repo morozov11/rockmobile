@@ -1,9 +1,13 @@
 package com.rockmobile.voice
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.SystemClock
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.ensureActive
 import java.io.ByteArrayOutputStream
 import kotlin.coroutines.coroutineContext
@@ -20,7 +24,7 @@ interface VoiceRecorder {
 data class RecordedVoice(val pcmS16Le: ByteArray, val sampleRateHz: Int = 16_000)
 
 /** Android microphone implementation. It owns and always releases its [AudioRecord]. */
-class AndroidVoiceRecorder : VoiceRecorder {
+class AndroidVoiceRecorder(private val context: Context) : VoiceRecorder {
     @Volatile private var finishRequested = false
     @Volatile private var discard = false
     @Volatile private var active: AudioRecord? = null
@@ -28,6 +32,9 @@ class AndroidVoiceRecorder : VoiceRecorder {
     override suspend fun record(): RecordedVoice {
         finishRequested = false
         discard = false
+        check(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            "Microphone permission is required"
+        }
         val minimum = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL, ENCODING)
         check(minimum > 0) { "Microphone does not support PCM 16 kHz mono" }
         val recorder = AudioRecord.Builder()

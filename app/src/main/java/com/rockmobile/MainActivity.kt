@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
             val playback = androidx.compose.runtime.remember { PlaybackController(this, unavailableVoiceStations) }
             val voice = androidx.compose.runtime.remember {
                 VoiceCommandController(
-                    AndroidVoiceRecorder(), RockserverVoiceClient(), settings::rockserverUrl, settings::bearerToken,
+                    AndroidVoiceRecorder(this), RockserverVoiceClient(), settings::rockserverUrl, settings::bearerToken,
                     object : VoicePlaybackActions {
                         override fun beginVoiceCapture() = playback.beginVoiceCapture()
                         override fun endVoiceCapture() = playback.endVoiceCapture()

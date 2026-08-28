@@ -99,11 +99,21 @@ class AccountSessionTest {
         assertTrue(result.exceptionOrNull() is RockserverHttpException)
     }
 
+    @Test fun gateway_mapsPendingCompletionToRetryableStatus() {
+        val transport = ScriptedTransport(post = HttpResponse(202, "{}"))
+        val pairing = PairingRequest("request", "d".repeat(16), "secret", "AB12CD34", "AMBER-DAWN")
+        val error = runCatching {
+            RockserverAccountGateway(RockserverApi(transport)) { "https://server.test" }.completePairing(pairing)
+        }.exceptionOrNull() as RockserverHttpException
+        assertEquals(202, error.statusCode)
+    }
+
     @Test fun pairingPoll_retriesOnlyPendingApproval_beforeDeadline() {
-        val pending = RockserverHttpException(401)
+        val pending = RockserverHttpException(202)
         assertTrue(shouldContinuePairing(pending, nowMs = 100, deadlineMs = 101))
         assertFalse(shouldContinuePairing(pending, nowMs = 101, deadlineMs = 101))
         assertFalse(shouldContinuePairing(RockserverHttpException(503), nowMs = 100, deadlineMs = 101))
+        assertFalse(shouldContinuePairing(RockserverHttpException(410), nowMs = 100, deadlineMs = 101))
     }
 
     @Test fun viewModel_pairingWaitsResumesAndCompletesWithAccountName() = runTest {
@@ -173,7 +183,7 @@ class AccountSessionTest {
             val alreadyViewModel = AccountViewModel(already, MemoryStore(), dispatcher, { testScheduler.currentTime }, 1_000, 100)
             alreadyViewModel.connect("RockMobile — Pixel 9")
             runCurrent()
-            assertTrue((alreadyViewModel.state.value as AccountUiState.Error).message.contains("уже подключён"))
+            assertTrue((alreadyViewModel.state.value as AccountUiState.Error).message.contains("лимит устройств"))
 
             val unavailable = FakeGateway().apply { createError = IOException("offline") }
             val unavailableViewModel = AccountViewModel(unavailable, MemoryStore(), dispatcher, { testScheduler.currentTime }, 1_000, 100)
@@ -275,7 +285,7 @@ class AccountSessionTest {
         }
         override fun completePairing(pairing: PairingRequest): Pair<AccountProfile, NativeCredentials> {
             completionError?.let { throw it }
-            if (!approved) throw RockserverHttpException(401)
+            if (!approved) throw RockserverHttpException(202)
             return profile to NativeCredentials("a".repeat(16), "b".repeat(16))
         }
         override fun refresh(refreshToken: String) = NativeCredentials("new-access-token-1234", "new-refresh-token-1234")
