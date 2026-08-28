@@ -8,14 +8,19 @@ StationsScreen ── StationsViewModel ── StationRepository
 StationsScreen ── PlaybackController ── MediaController ── MediaSessionService ── ExoPlayer
 
 StationsScreen ── VoiceCommandController ── VoiceRecorder / RockserverVoiceClient
-                                              └── VoicePlaybackActions ── PlaybackController
+                                               └── VoicePlaybackActions ── PlaybackController
+
+AccountScreen ── AccountViewModel ── AccountGateway ── RockserverApi
+                                  └── CredentialStore ── Android Keystore
 ```
 
 ## Каталог
 
-`StationRepository` реализует remote-first policy. Network, timeout, HTTP, malformed/empty response приводят к чтению проверенного bundled `stations.v1.json`. Loader сверяет SHA-256, catalogVersion и schemaVersion, проверяет canonical ID и правила primary stream. Отмена coroutine пробрасывается и не считается fallback. Если оба источника недоступны, ViewModel показывает фатальную ошибку. Ошибки Media3 не поступают в repository и не могут переключить каталог.
+`StationRepository` реализует local-first policy, как RockCast: первый экран читает проверенный bundled `stations.v1.json` и не подменяет его результатом поиска. В фоне `GET /v1/catalog/stations` постранично загружает серверную лексику фильтров, но не заменяет видимый стартовый список. Текст и любой выбранный жанр/страна/язык отправляются как естественный запрос в `POST /v1/search`; при ошибке серверного поиска ViewModel использует offline search, если он доступен. Loader сверяет SHA-256, catalogVersion и schemaVersion, а baseline повторяет порядок RockCast. Отмена coroutine пробрасывается и не считается fallback. Если локальные источники недоступны, ViewModel показывает фатальную ошибку. Ошибки Media3 не поступают в repository и не могут переключить каталог.
 
-Фильтрация существует только в `StationsViewModel` и работает с общей моделью `Station`. Voice-result заменяет видимый список ранжированными кандидатами Rockserver и сразу запускает выбранную станцию.
+`StationFilterOptions` хранит полный набор вариантов, полученный из серверного каталога, либо локальный набор при offline fallback. `StationsViewModel` отвечает за debounce, отмену устаревших запросов и возврат к baseline после очистки поиска. Voice-result заменяет видимый список ранжированными кандидатами Rockserver и сразу запускает выбранную станцию.
+
+`StationsScreen` теперь отвечает только за композицию экрана; каталоговые компоненты и `PlayerScreen` находятся отдельно в том же UI-пакете. Это уменьшает размер экранного файла, не превращая каждый небольшой composable в самостоятельный слой.
 
 ## Иконки станций (MVP)
 
@@ -23,7 +28,21 @@ StationsScreen ── VoiceCommandController ── VoiceRecorder / RockserverVo
 
 ## Официальный RockServer
 
-Release-клиент использует `https://alex.vault57.ru`. Публичные `POST /v1/search` и `wss://…/v1/voice/stream` идут без Bearer. Legacy LAN/emulator URL и bootstrap-токен scrub'ятся при старте `SettingsRepository`.
+Release-клиент использует `https://alex.vault57.ru`. Публичные `POST /v1/search` и `wss://…/v1/voice/stream` идут без Bearer. Legacy LAN/emulator URL и старый bootstrap-токен scrub'ятся при старте `SettingsRepository`; native account tokens живут только в Keystore-защищённом хранилище.
+
+## Аккаунт и pairing
+
+`AccountViewModel` создаёт pairing для `RockMobile — <модель устройства>`, держит одноразовые
+proofs только в памяти, открывает G2-ссылку `/?code=…&secret=…` и после возврата из браузера
+продолжает polling в lifecycle foreground. Native completion отправляет только `desktop_token`;
+account/device display names сохраняются вместе с credentials в зашифрованном Keystore-файле.
+Если native список устройств недоступен, успешный pairing не блокируется и UI явно сообщает о
+временной недоступности центра устройств.
+
+Внутри account-пакета разделены четыре ответственности: модели и UI-state, HTTP gateway,
+зашифрованное хранилище и lifecycle ViewModel. UI не знает о формате HTTP-ответов, а ViewModel
+зависит от `AccountGateway`/`CredentialStore`, поэтому G3/G7 можно добавить без подмены
+неподдерживаемых маршрутов.
 
 ## Воспроизведение
 

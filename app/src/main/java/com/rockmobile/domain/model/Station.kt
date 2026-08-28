@@ -31,3 +31,18 @@ data class StationStream(
 )
 
 data class StationCatalogue(val stations: List<Station>, val source: CatalogueSource)
+
+/** Complete filter vocabulary obtained from the server, or derived from the local catalogue offline. */
+data class StationFilterOptions(
+    val genres: List<String>,
+    val countries: List<String>,
+    val languages: List<String>,
+) {
+    companion object {
+        fun from(stations: List<Station>): StationFilterOptions = StationFilterOptions(
+            genres = stations.flatMap { it.tags }.distinctBy(String::lowercase).sortedBy(String::lowercase),
+            countries = stations.mapNotNull { it.country }.distinctBy(String::lowercase).sortedBy(String::lowercase),
+            languages = stations.mapNotNull { it.language }.distinctBy(String::lowercase).sortedBy(String::lowercase),
+        )
+    }
+}

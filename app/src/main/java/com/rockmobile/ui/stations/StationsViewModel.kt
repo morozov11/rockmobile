@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rockmobile.data.repository.CatalogueLoadResult
 import com.rockmobile.data.repository.StationRepository
+import com.rockmobile.data.repository.StationSearchResult
 import com.rockmobile.domain.model.StationCatalogue
 import com.rockmobile.domain.model.Station
+import com.rockmobile.domain.model.StationFilterOptions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,6 +15,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 
 data class StationFilters(
     val query: String = "",
@@ -23,7 +27,14 @@ data class StationFilters(
 
 /** Filters only use fields that exist in [Station], so they work for both catalogue sources. */
 fun filterStations(stations: List<Station>, filters: StationFilters) = stations.filter { station ->
-    station.name.contains(filters.query.trim(), ignoreCase = true) &&
+    val queryTerms = filters.query.trim().lowercase().split(Regex("\\s+")).filter(String::isNotEmpty)
+    val searchableText = buildString {
+        append(station.name).append(' ')
+        append(station.tags.joinToString(" ")).append(' ')
+        append(station.country.orEmpty()).append(' ')
+        append(station.language.orEmpty())
+    }.lowercase()
+    queryTerms.all(searchableText::contains) &&
         (filters.genre == null || station.tags.any { it.equals(filters.genre, ignoreCase = true) }) &&
         (filters.country == null || station.country.equals(filters.country, ignoreCase = true)) &&
         (filters.language == null || station.language.equals(filters.language, ignoreCase = true))
@@ -39,6 +50,7 @@ sealed interface StationsUiState {
         val catalogue: StationCatalogue,
         val fallbackReason: String? = null,
         val filters: StationFilters = StationFilters(),
+        val filterOptions: StationFilterOptions? = null,
     ) : StationsUiState {
         val stations get() = filterStations(catalogue.stations, filters)
     }
@@ -52,32 +64,68 @@ class StationsViewModel(
     private val unavailableVoiceStationIds: () -> Set<String> = { emptySet() },
 ) : ViewModel() {
     private val _state = MutableStateFlow<StationsUiState>(StationsUiState.Loading)
+    private var searchJob: Job? = null
+    private var filterOptionsJob: Job? = null
     val state: StateFlow<StationsUiState> = _state.asStateFlow()
     init { retryRockserver() }
     fun retryRockserver() = viewModelScope.launch {
+        searchJob?.cancel()
+        filterOptionsJob?.cancel()
         _state.value = StationsUiState.Loading
-        // HttpURLConnection is blocking; keep it off the Compose/Main dispatcher.
         val result = withContext(ioDispatcher) { repository.loadCatalogue() }
         _state.value = when (result) {
             is CatalogueLoadResult.Success -> StationsUiState.Content(result.catalogue)
-            is CatalogueLoadResult.Fallback -> StationsUiState.Content(result.catalogue, "Rockserver unavailable — using built-in station catalogue")
+            is CatalogueLoadResult.Fallback -> StationsUiState.Content(result.catalogue, "Using the backup offline station catalogue")
             is CatalogueLoadResult.Fatal -> StationsUiState.Error("Could not load either Rockserver or the built-in catalogue")
         }
+        if (_state.value is StationsUiState.Content) refreshFilterOptions()
     }
 
     fun updateFilters(transform: (StationFilters) -> StationFilters) {
         val content = _state.value as? StationsUiState.Content ?: return
         val filters = transform(content.filters)
+        if (filters == content.filters) return
         _state.value = content.copy(filters = filters)
-        if (content.catalogue.source == com.rockmobile.domain.model.CatalogueSource.EXTENDED) {
-            viewModelScope.launch {
-                val results = withContext(ioDispatcher) {
-                    repository.searchOffline(filters.query, filters.genre, filters.country, filters.language)
-                } ?: return@launch
-                val current = _state.value as? StationsUiState.Content ?: return@launch
-                if (current.catalogue.source == com.rockmobile.domain.model.CatalogueSource.EXTENDED && current.filters == filters) {
-                    _state.value = current.copy(catalogue = StationCatalogue(results, current.catalogue.source))
-                }
+        searchJob?.cancel()
+        val hasSearchRequest = filters.query.trim().isNotEmpty() || filters.genre != null || filters.country != null || filters.language != null
+        if (!hasSearchRequest) {
+            if (content.filters.query.trim().isNotEmpty() || content.filters.genre != null || content.filters.country != null || content.filters.language != null || content.catalogue.source == com.rockmobile.domain.model.CatalogueSource.ROCKSERVER) {
+                refreshAfterSearchCleared(filters)
+            }
+            return
+        }
+
+        searchJob = viewModelScope.launch {
+            delay(250)
+            val result = withContext(ioDispatcher) {
+                repository.search(filters.query, filters.genre, filters.country, filters.language)
+            }
+            val current = _state.value as? StationsUiState.Content ?: return@launch
+            if (current.filters != filters) return@launch
+            if (result is StationSearchResult.Success) {
+                _state.value = current.copy(catalogue = result.catalogue, fallbackReason = null)
+            }
+        }
+    }
+
+    private fun refreshFilterOptions() {
+        filterOptionsJob?.cancel()
+        filterOptionsJob = viewModelScope.launch {
+            val options = withContext(ioDispatcher) { repository.loadFilterOptions() } ?: return@launch
+            val current = _state.value as? StationsUiState.Content ?: return@launch
+            _state.value = current.copy(filterOptions = options)
+        }
+    }
+
+    private fun refreshAfterSearchCleared(filters: StationFilters) {
+        searchJob = viewModelScope.launch {
+            val result = withContext(ioDispatcher) { repository.loadCatalogue() }
+            val current = _state.value as? StationsUiState.Content ?: return@launch
+            if (current.filters != filters) return@launch
+            _state.value = when (result) {
+                is CatalogueLoadResult.Success -> current.copy(catalogue = result.catalogue)
+                is CatalogueLoadResult.Fallback -> current.copy(catalogue = result.catalogue, fallbackReason = "Using the built-in station catalogue")
+                is CatalogueLoadResult.Fatal -> current
             }
         }
     }
@@ -88,6 +136,7 @@ class StationsViewModel(
      */
     fun showVoiceCandidates(candidates: List<Station>): Station? {
         if (candidates.isEmpty()) return null
+        searchJob?.cancel()
         val unavailableIds = unavailableVoiceStationIds()
         val rankedCandidates = rankVoiceCandidates(candidates, unavailableIds)
         val content = _state.value as? StationsUiState.Content

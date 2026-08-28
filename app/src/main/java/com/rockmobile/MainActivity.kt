@@ -49,10 +49,8 @@ class MainActivity : ComponentActivity() {
         personalData.reconcile(baseline.personalCatalogIndex())
         val repository = StationRepository(
             RockserverStationSource(RockserverApi(), settings::rockserverUrl, settings::bearerToken),
-            FallbackLocalStationSource(
-                ExtendedCatalogStationSource(this),
-                baseline,
-            ),
+            primary = baseline,
+            offlineSearch = FallbackLocalStationSource(ExtendedCatalogStationSource(this), baseline),
         )
         setContent {
             RockmobileTheme {

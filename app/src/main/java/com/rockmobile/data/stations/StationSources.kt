@@ -2,6 +2,7 @@ package com.rockmobile.data.stations
 
 import android.content.res.AssetManager
 import com.rockmobile.data.api.RockserverApi
+import com.rockmobile.data.dto.parseRockserverCatalogPage
 import com.rockmobile.data.dto.parseRockserverStations
 import com.rockmobile.domain.model.Station
 import com.rockmobile.domain.model.StationStream
@@ -12,7 +13,11 @@ import org.json.JSONObject
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 
-interface RemoteStationSource { suspend fun load(): List<Station> }
+/** Remote discovery source. The initial screen is deliberately local like RockCast. */
+interface RemoteStationSource {
+    suspend fun search(query: String): List<Station>?
+    suspend fun loadCatalogue(): List<Station>? = null
+}
 interface LocalStationSource {
     val catalogueSource: CatalogueSource get() = CatalogueSource.BUNDLED
     suspend fun load(): List<Station>
@@ -24,7 +29,23 @@ class RockserverStationSource(
     private val baseUrl: () -> String,
     private val bearerToken: () -> String,
 ) : RemoteStationSource {
-    override suspend fun load(): List<Station> = parseRockserverStations(api.search(baseUrl(), bearerToken()))
+    override suspend fun search(query: String): List<Station> =
+        parseRockserverStations(api.search(baseUrl(), bearerToken(), query))
+
+    override suspend fun loadCatalogue(): List<Station> {
+        val stations = mutableListOf<Station>()
+        val seenCursors = mutableSetOf<String>()
+        var cursor: String? = null
+        do {
+            val page = parseRockserverCatalogPage(api.catalogPage(baseUrl(), bearerToken(), cursor))
+            stations += page.stations
+            cursor = page.nextCursor
+            if (cursor != null && !seenCursors.add(cursor)) {
+                throw IllegalStateException("Rockserver catalogue cursor repeated")
+            }
+        } while (cursor != null)
+        return stations.distinctBy { it.id }
+    }
 }
 
 /** Reads the pinned, verified shared-catalog v1 snapshot. It never accesses the network. */
@@ -55,7 +76,7 @@ class RockcastAssetStationSource(
         val bytes = assets.open(ASSET_NAME).use { it.readBytes() }
         val stations = parseSharedCatalog(bytes, PINNED_CATALOG_VERSION, PINNED_SHA256)
         migrateLegacyIds(stations.flatMap { entry -> entry.legacyIds.map { legacyId -> legacyId to entry.station.id } }.toMap())
-        return stations.map { it.station }
+        return orderLikeRockcast(stations.map { it.station })
     }
 
     private companion object {
@@ -63,6 +84,17 @@ class RockcastAssetStationSource(
         const val PINNED_CATALOG_VERSION = "2026.08.2"
         const val PINNED_SHA256 = "3fa20dca94fc059bd433a47b9fba9bb6d5e5e1aa2957a5ffb58b2a7b20b1d74d"
     }
+}
+
+/** Keeps the mobile start screen in the same order as RockCast's local catalogue. */
+internal fun orderLikeRockcast(stations: List<Station>): List<Station> {
+    val rockcastTags = listOf("metal", "hard rock", "punk", "thrash", "death", "doom", "industrial")
+    val (priority, others) = stations.partition { station ->
+        station.tags.any { stationTag -> rockcastTags.any { tag -> stationTag.lowercase().contains(tag) } }
+    }
+    val comparator = compareBy<Station> { !it.streamUrl.startsWith("https://") }
+        .thenBy { it.name.lowercase() }
+    return priority.sortedWith(comparator) + others.sortedWith(comparator)
 }
 
 /** Uses the extended catalog when its whole release gate succeeds, otherwise preserves baseline radio. */

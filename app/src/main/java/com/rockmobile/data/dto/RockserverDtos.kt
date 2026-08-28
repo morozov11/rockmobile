@@ -11,6 +11,17 @@ internal fun parseRockserverStations(body: String): List<Station> {
     return (0 until stations.length()).map { index -> parseStation(stations.getJSONObject(index)) }
 }
 
+internal data class RockserverCatalogPage(
+    val stations: List<Station>,
+    val nextCursor: String?,
+)
+
+internal fun parseRockserverCatalogPage(body: String): RockserverCatalogPage {
+    val response = JSONObject(body)
+    val nextCursor = response.optString("next_cursor").trim().takeIf(String::isNotEmpty)
+    return RockserverCatalogPage(parseRockserverStations(body), nextCursor)
+}
+
 private fun parseStation(json: JSONObject): Station {
     fun required(name: String): String = json.optString(name).trim().also {
         require(it.isNotEmpty()) { "Station is missing $name" }

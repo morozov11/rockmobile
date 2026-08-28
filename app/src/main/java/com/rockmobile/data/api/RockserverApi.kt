@@ -4,6 +4,8 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 /** Small HTTP boundary so catalogue parsing and failure behaviour stay unit-testable. */
 interface HttpTransport {
@@ -45,14 +47,28 @@ class UrlConnectionTransport : HttpTransport {
     }
 }
 
-/** RockServer's existing protected search endpoint, used as the remote catalogue source. */
+/** RockServer's existing public search endpoint. It is never used for the initial catalogue. */
 class RockserverApi(
     private val transport: HttpTransport = UrlConnectionTransport(),
 ) {
-    fun search(baseUrl: String, bearerToken: String, query: String = "rock"): String {
+    fun search(baseUrl: String, bearerToken: String, query: String): String {
         val endpoint = baseUrl.trim().trimEnd('/') + "/v1/search"
         val request = JSONObject().put("query", query).put("locale", "en-US").put("limit", 20)
         val response = transport.post(endpoint, bearerToken, request.toString())
+        if (response.code !in 200..299) throw RockserverHttpException(response.code)
+        return response.body
+    }
+
+    /** Reads one page of the public station catalogue for server-backed filter options. */
+    fun catalogPage(baseUrl: String, bearerToken: String, cursor: String? = null): String {
+        val query = buildString {
+            append("?limit=50")
+            cursor?.trim()?.takeIf(String::isNotEmpty)?.let {
+                append("&cursor=")
+                append(URLEncoder.encode(it, StandardCharsets.UTF_8.name()))
+            }
+        }
+        val response = transport.get(endpoint(baseUrl, "/v1/catalog/stations$query"), bearerToken)
         if (response.code !in 200..299) throw RockserverHttpException(response.code)
         return response.body
     }

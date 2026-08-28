@@ -1,0 +1,100 @@
+package com.rockmobile.account
+
+import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import org.json.JSONObject
+import java.io.File
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.spec.GCMParameterSpec
+
+interface CredentialStore {
+    fun load(): NativeCredentials?
+    fun save(credentials: NativeCredentials)
+    fun loadProfile(): AccountProfile? = null
+    fun saveProfile(profile: AccountProfile) = Unit
+    fun clear()
+}
+
+/** Encrypted private file; the AES key is non-exportable and held in Android Keystore. */
+class KeystoreCredentialStore(context: Context) : CredentialStore {
+    private val file = File(context.noBackupFilesDir, "native_session.bin")
+
+    override fun load(): NativeCredentials? = try {
+        readJson()?.let { NativeCredentials(it.getString("access_token"), it.getString("refresh_token")) }
+    } catch (_: Exception) {
+        clear()
+        null
+    }
+
+    override fun loadProfile(): AccountProfile? = try {
+        readJson()?.optJSONObject("profile")?.let(::profile)
+    } catch (_: Exception) {
+        clear()
+        null
+    }
+
+    override fun save(credentials: NativeCredentials) = updateJson {
+        put("access_token", credentials.accessToken).put("refresh_token", credentials.refreshToken)
+    }
+
+    override fun saveProfile(profile: AccountProfile) = updateJson { put("profile", profileJson(profile)) }
+
+    override fun clear() { file.delete() }
+
+    private fun readJson(): JSONObject? = if (!file.exists()) null else JSONObject(decrypt(file.readBytes()).toString(Charsets.UTF_8))
+
+    private fun updateJson(update: JSONObject.() -> Unit) {
+        val body = readJson() ?: JSONObject()
+        body.update()
+        file.parentFile?.mkdirs()
+        file.writeBytes(encrypt(body.toString().toByteArray()))
+    }
+
+    private fun profileJson(profile: AccountProfile) = JSONObject().apply {
+        put("user_id", profile.userId)
+        put("session_id", profile.sessionId)
+        put("device_id", profile.deviceId)
+        put("account_display_name", profile.accountDisplayName)
+        put("device_display_name", profile.deviceDisplayName)
+        put("device_type", profile.deviceType)
+        profile.createdAt?.let { put("created_at", it) }
+        profile.deviceCreatedAt?.let { put("device_created_at", it) }
+        profile.lastSeenAt?.let { put("last_seen_at", it) }
+    }
+
+    private fun profile(body: JSONObject) = AccountProfile(
+        userId = body.getString("user_id"),
+        sessionId = body.getString("session_id"),
+        deviceId = body.getString("device_id"),
+        accountDisplayName = body.getString("account_display_name"),
+        deviceDisplayName = body.getString("device_display_name"),
+        deviceType = body.getString("device_type"),
+        createdAt = body.optString("created_at").takeIf(String::isNotBlank),
+        deviceCreatedAt = body.optString("device_created_at").takeIf(String::isNotBlank),
+        lastSeenAt = body.optString("last_seen_at").takeIf(String::isNotBlank),
+    )
+
+    private fun key() = (KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.getKey(KEY_ALIAS, null)
+        ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
+            init(KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .build())
+        }.generateKey()) as javax.crypto.SecretKey
+
+    private fun encrypt(plain: ByteArray): ByteArray = Cipher.getInstance("AES/GCM/NoPadding").run {
+        init(Cipher.ENCRYPT_MODE, key())
+        iv + doFinal(plain)
+    }
+
+    private fun decrypt(ciphertext: ByteArray): ByteArray = Cipher.getInstance("AES/GCM/NoPadding").run {
+        require(ciphertext.size > 12)
+        init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, ciphertext.copyOfRange(0, 12)))
+        doFinal(ciphertext, 12, ciphertext.size - 12)
+    }
+
+    private companion object { const val KEY_ALIAS = "rockmobile_native_session" }
+}

@@ -3,7 +3,7 @@ package com.rockmobile.settings
 import android.content.Context
 import android.content.SharedPreferences
 
-/** Central location for connection settings; UI for editing them is deliberately deferred. */
+/** Central location for the public server URL; account credentials never live here. */
 class SettingsRepository(context: Context) {
     private val preferences = context.getSharedPreferences("rockmobile_settings", Context.MODE_PRIVATE)
 
@@ -12,9 +12,10 @@ class SettingsRepository(context: Context) {
     }
 
     fun rockserverUrl(): String = preferences.getString(URL_KEY, PRODUCTION_BASE_URL)!!.ifBlank { PRODUCTION_BASE_URL }
-    fun bearerToken(): String = preferences.getString(TOKEN_KEY, "")!!.trim()
-    fun updateRockserver(url: String, bearerToken: String) {
-        preferences.edit().putString(URL_KEY, url.trim()).putString(TOKEN_KEY, bearerToken.trim()).apply()
+    /** Anonymous catalogue/voice routes do not need a bearer token. Native account tokens use KeystoreCredentialStore. */
+    fun bearerToken(): String = ""
+    fun updateRockserver(url: String, @Suppress("UNUSED_PARAMETER") bearerToken: String) {
+        preferences.edit().putString(URL_KEY, url.trim()).remove(TOKEN_KEY).apply()
     }
 
     companion object {
@@ -24,7 +25,7 @@ class SettingsRepository(context: Context) {
         const val DEFAULT_EMULATOR_URL = "http://10.0.2.2:3000"
         /** Former laptop LAN default retained only for recognition of legacy installs. */
         const val DEFAULT_LAPTOP_URL = "http://192.168.31.133:3000"
-        /** Former shared bootstrap credential; scrubbed on load so public /v1 calls stay unauthenticated. */
+        /** Former shared bootstrap credential; retained only to scrub legacy installs. */
         const val DEFAULT_BEARER_TOKEN = "rockserver-dev-bootstrap-7f4b9a2c1e6d8a40"
         internal const val URL_KEY = "rockserver_url"
         internal const val TOKEN_KEY = "rockserver_token"
@@ -43,11 +44,8 @@ internal fun scrubLegacyRockserverDefaults(preferences: SharedPreferences) {
         }
     }
     if (preferences.contains(SettingsRepository.TOKEN_KEY)) {
-        val replacement = migratedStoredBearerToken(preferences.getString(SettingsRepository.TOKEN_KEY, null).orEmpty())
-        if (replacement != null) {
-            editor.putString(SettingsRepository.TOKEN_KEY, replacement)
-            changed = true
-        }
+        editor.remove(SettingsRepository.TOKEN_KEY)
+        changed = true
     }
     if (changed) editor.apply()
 }
