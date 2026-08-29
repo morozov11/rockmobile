@@ -1,20 +1,19 @@
 # RockMobile status
 
-## RM-011 App Link return recovery (verified locally, 2026-08-30)
+## RM-011 App Link return recovery (physical defect fixed locally, 2026-08-30)
 
-The exact, credential-free App Link return route now reuses the foreground `MainActivity` with
-Android `singleTop` launch behavior. That delivers the return to `onNewIntent`, where the existing
-in-memory pairing can continue polling; it does not broaden the intent filter or persist pairing
-secrets. This fixes the observed post-browser return that otherwise created a new activity and
-rendered the disconnected Connect screen. The release version is now `0.1.4`/`versionCode=5`.
+The exact, credential-free App Link return route now uses Android `singleTask` launch behavior.
+`singleTop` passed an explicit-emulator-intent check but does not guarantee reuse when Chrome opens
+an App Link from its own task: live staging evidence showed approved requests never reached native
+completion. `singleTask` returns that external intent to the existing `MainActivity`, where the
+in-memory pairing can continue polling. It does not broaden the intent filter or persist pairing
+secrets. The release version is now `0.1.5`/`versionCode=6`.
 
-Verified: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` passed. The signed `0.1.4`/
-`versionCode=5` package installed over the physical-device prior release without removing its app
-data. On a clean disposable emulator, a staging pairing was created and the exact credential-free
-return URI preserved the pending pairing, rendered the browser-return state, and did not show the
-disconnected Connect screen. The physical device reports the return host as App Link `verified`.
-Browser passkey approval and final physical native credentials remain unverified and are not
-claimed.
+The prior `0.1.4`/`versionCode=5` build passed unit/lint/release checks and an explicit-emulator
+return check, but staging browser approval left two requests approved but unconsumed. The exact
+`singleTask` replacement passed `testDebugUnitTest`, `lintDebug`, and `assembleRelease` as
+`0.1.5`/`versionCode=6`. Physical verified-App-Link completion remains pending. Browser passkey
+approval and final physical native credentials remain unverified and are not claimed.
 
 ## RM-011 endpoint recovery release (verified locally, 2026-08-30)
 

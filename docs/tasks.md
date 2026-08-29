@@ -1,14 +1,28 @@
 # RockMobile task log
 
+## RM-011-R4 — 2026-08-30 — cross-task App Link return recovery
+
+- Goal: ensure Chrome's verified external App Link returns to the original pending RockMobile
+  activity so the native completion request is sent.
+- Scope: replace task-local `singleTop` with `singleTask`; release metadata advances to
+  `0.1.5`/`versionCode=6`.
+- Evidence: the browser approval endpoint succeeded, while a read-only staging aggregate found
+  recent requests approved but not consumed; this excludes browser approval and identifies native
+  completion not resuming after the external return.
+- Checks: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` passed for the signed
+  `0.1.5`/`versionCode=6` package. Signed package update and physical verified-App-Link completion
+  remain pending.
+- Status: local verification complete; physical verification pending.
+
 ## RM-011-R3 — 2026-08-30 — App Link return lifecycle recovery
 
 - Goal: retain the existing pending pairing when the browser opens the narrow credential-free
   RockMobile return App Link.
-- Scope: `MainActivity` only uses Android `singleTop` launch behavior; release metadata advances
+- Scope: `MainActivity` initially used Android `singleTop` launch behavior; release metadata advanced
   monotonically to `0.1.4`/`versionCode=5`.
-- Result: a return intent is delivered to the foreground activity's existing `onNewIntent` path,
-  allowing its in-memory pending pairing to continue without persisting its secret. The route and
-  URI validation remain unchanged.
+- Result: explicit component delivery on an emulator retained the pending pairing without persisting
+  its secret. Live Chrome delivery exposed that `singleTop` was insufficient across tasks; this is
+  superseded by RM-011-R4. The route and URI validation remain unchanged.
 - Checks: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` passed; the signed package
   installed over the physical-device prior release with application data retained. A clean
   disposable emulator created a staging pairing and, after the exact credential-free return URI,
