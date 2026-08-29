@@ -10,9 +10,12 @@
   allowing its in-memory pending pairing to continue without persisting its secret. The route and
   URI validation remain unchanged.
 - Checks: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` passed; the signed package
-  installed over the physical-device prior release with application data retained. Disposable
-  emulator and physical-device lifecycle verification remain pending.
-- Status: implementation and build verification complete; lifecycle verification pending.
+  installed over the physical-device prior release with application data retained. A clean
+  disposable emulator created a staging pairing and, after the exact credential-free return URI,
+  retained the pairing and rendered its browser-return state rather than Connect. The physical
+  device reports the return host as verified.
+- Status: verified through the disposable lifecycle check. Browser passkey approval and final
+  physical native credentials remain pending and are not claimed.
 
 ## RM-011-R2 — 2026-08-30 — stale endpoint recovery
 

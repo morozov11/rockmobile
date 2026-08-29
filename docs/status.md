@@ -10,8 +10,11 @@ rendered the disconnected Connect screen. The release version is now `0.1.4`/`ve
 
 Verified: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` passed. The signed `0.1.4`/
 `versionCode=5` package installed over the physical-device prior release without removing its app
-data. Physical App Link lifecycle confirmation remains pending; the installed prior release
-reproduced the disconnected Connect screen after browser approval.
+data. On a clean disposable emulator, a staging pairing was created and the exact credential-free
+return URI preserved the pending pairing, rendered the browser-return state, and did not show the
+disconnected Connect screen. The physical device reports the return host as App Link `verified`.
+Browser passkey approval and final physical native credentials remain unverified and are not
+claimed.
 
 ## RM-011 endpoint recovery release (verified locally, 2026-08-30)
 
