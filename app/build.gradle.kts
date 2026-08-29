@@ -14,8 +14,8 @@ android {
         applicationId = "com.rockmobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.1.3"
+        versionCode = 5
+        versionName = "0.1.4"
         buildConfigField("String", "BUILD_REVISION", "\"${providers.exec { commandLine("git", "rev-parse", "--short=7", "HEAD") }.standardOutput.asText.get().trim()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -1,5 +1,19 @@
 # RockMobile task log
 
+## RM-011-R3 — 2026-08-30 — App Link return lifecycle recovery
+
+- Goal: retain the existing pending pairing when the browser opens the narrow credential-free
+  RockMobile return App Link.
+- Scope: `MainActivity` only uses Android `singleTop` launch behavior; release metadata advances
+  monotonically to `0.1.4`/`versionCode=5`.
+- Result: a return intent is delivered to the foreground activity's existing `onNewIntent` path,
+  allowing its in-memory pending pairing to continue without persisting its secret. The route and
+  URI validation remain unchanged.
+- Checks: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` passed; the signed package
+  installed over the physical-device prior release with application data retained. Disposable
+  emulator and physical-device lifecycle verification remain pending.
+- Status: implementation and build verification complete; lifecycle verification pending.
+
 ## RM-011-R2 — 2026-08-30 — stale endpoint recovery
 
 - Goal: eliminate the client-side condition that can retain an obsolete RockServer endpoint and

@@ -62,7 +62,7 @@ class AccountSessionTest {
         assertEquals("Радио и сохранённые станции работают без аккаунта.", disconnectedSecondaryCopy())
         assertEquals("RockMobile", rockMobileTitle())
         assertEquals("RockMobile logo", rockMobileLogoDescription())
-        assertTrue(visibleBuild().matches(Regex("0\\.1\\.3 \\([0-9a-f]{7}\\)")))
+        assertTrue(visibleBuild().matches(Regex("0\\.1\\.4 \\([0-9a-f]{7}\\)")))
     }
 
     @Test fun pairingCompletion_sendsOnlyDesktopProof_neverUserId() {

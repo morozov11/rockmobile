@@ -1,5 +1,18 @@
 # RockMobile status
 
+## RM-011 App Link return recovery (verified locally, 2026-08-30)
+
+The exact, credential-free App Link return route now reuses the foreground `MainActivity` with
+Android `singleTop` launch behavior. That delivers the return to `onNewIntent`, where the existing
+in-memory pairing can continue polling; it does not broaden the intent filter or persist pairing
+secrets. This fixes the observed post-browser return that otherwise created a new activity and
+rendered the disconnected Connect screen. The release version is now `0.1.4`/`versionCode=5`.
+
+Verified: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` passed. The signed `0.1.4`/
+`versionCode=5` package installed over the physical-device prior release without removing its app
+data. Physical App Link lifecycle confirmation remains pending; the installed prior release
+reproduced the disconnected Connect screen after browser approval.
+
 ## RM-011 endpoint recovery release (verified locally, 2026-08-30)
 
 The official mobile runtime now always uses the fixed public RockServer URL and removes every stale
