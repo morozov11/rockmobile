@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -41,6 +42,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import com.rockmobile.BuildConfig
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -65,7 +67,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
     }
 
     val close = {
-        if (state is AccountUiState.Pairing) viewModel.cancelPairing()
+        if (state is AccountUiState.Starting || state is AccountUiState.Pairing) viewModel.cancelPairing()
         dismiss()
     }
 
@@ -81,20 +83,21 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
             ) {
                 when (state) {
                     AccountUiState.Disconnected -> {
-                        Text("Подключите этот телефон к уже существующему RockServer аккаунту через защищённую ссылку.")
-                        Text("Новый аккаунт здесь не создаётся. Анонимное радио продолжает работать без сервера.")
+                        Text(disconnectedPrimaryCopy())
+                        Text(disconnectedSecondaryCopy())
                         OutlinedTextField(
                             value = deviceName,
                             onValueChange = {
                                 deviceName = it
                                 nameError = validateDeviceDisplayName(it)
                             },
-                            label = { Text("Имя телефона") },
+                            label = { Text("Имя устройства") },
                             supportingText = { nameError?.let { Text(it) } },
                             isError = nameError != null,
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        Text(presentDeviceDisplayName("rockmobile_android", deviceName))
                         Button(
                             onClick = {
                                 val error = validateDeviceDisplayName(deviceName)
@@ -102,7 +105,16 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                                 if (error == null) viewModel.connect(deviceName)
                             },
                             enabled = validateDeviceDisplayName(deviceName) == null,
-                        ) { Text("Подключить этот телефон к аккаунту") }
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Подключить RockMobile") }
+                    }
+
+                    AccountUiState.Starting -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.size(8.dp))
+                            Text("Начинаем подключение…")
+                        }
                     }
 
                     is AccountUiState.Pairing -> {
@@ -162,6 +174,8 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                         Text("Анонимное радио продолжает работать без аккаунта.")
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+                Text(visibleBuild(), style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = { TextButton(onClick = close) { Text("Закрыть") } },
@@ -184,11 +198,18 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
 }
 
 private fun dialogTitle(state: AccountUiState): String = when (state) {
-    AccountUiState.Disconnected -> "Аккаунт RockServer"
+    AccountUiState.Disconnected -> "Rock-аккаунт"
+    AccountUiState.Starting -> "Подключение RockMobile"
     is AccountUiState.Pairing -> "Подключение телефона"
     is AccountUiState.Connected -> "Аккаунт и устройства"
     is AccountUiState.Error -> "Подключение аккаунта"
 }
+
+internal fun disconnectedPrimaryCopy() = "Подключите RockMobile к существующему Rock-аккаунту."
+
+internal fun disconnectedSecondaryCopy() = "Радио и сохранённые станции работают без аккаунта."
+
+internal fun visibleBuild() = "${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_REVISION})"
 
 private fun formatPairingExpiry(value: String): String = runCatching {
     DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.getDefault())

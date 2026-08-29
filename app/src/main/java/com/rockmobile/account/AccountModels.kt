@@ -70,6 +70,7 @@ data class AccountDevice(
 
 sealed interface AccountUiState {
     data object Disconnected : AccountUiState
+    data object Starting : AccountUiState
     data class Pairing(val request: PairingRequest) : AccountUiState
     data class Connected(
         val profile: AccountProfile,

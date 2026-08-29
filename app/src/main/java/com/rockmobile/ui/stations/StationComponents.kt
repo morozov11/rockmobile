@@ -122,9 +122,9 @@ internal fun VoiceStatusBar(state: VoiceUiState, cancel: () -> Unit, dismiss: ()
 internal fun RockHeader(retry: () -> Unit, openAccount: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(painter = painterResource(R.mipmap.rockmobile_icon), contentDescription = "RockCast logo", modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.small))
+            Image(painter = painterResource(R.mipmap.rockmobile_icon), contentDescription = rockMobileLogoDescription(), modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.small))
             Spacer(Modifier.width(8.dp))
-            Text("RockCast", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(rockMobileTitle(), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
         Row {
             IconButton(onClick = openAccount) { Icon(Icons.Default.Person, "Account and devices", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -132,6 +132,10 @@ internal fun RockHeader(retry: () -> Unit, openAccount: () -> Unit) {
         }
     }
 }
+
+internal fun rockMobileTitle() = "RockMobile"
+
+internal fun rockMobileLogoDescription() = "RockMobile logo"
 
 @Composable
 internal fun LoadingState() {

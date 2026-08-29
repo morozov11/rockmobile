@@ -4,6 +4,8 @@ import com.rockmobile.data.api.HttpResponse
 import com.rockmobile.data.api.HttpTransport
 import com.rockmobile.data.api.RockserverApi
 import com.rockmobile.data.api.ApiError
+import com.rockmobile.ui.stations.rockMobileLogoDescription
+import com.rockmobile.ui.stations.rockMobileTitle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -22,6 +24,7 @@ import java.io.IOException
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountSessionTest {
     @Test fun deviceName_defaultsAndValidatesAgainstServerBounds() {
+        assertEquals("RMX5056", defaultDeviceDisplayName("RMX5056"))
         assertEquals("Pixel 9", defaultDeviceDisplayName("Pixel 9"))
         assertEquals("Android device", defaultDeviceDisplayName(" "))
         assertTrue(validateDeviceDisplayName("  phone  ") == null)
@@ -31,6 +34,14 @@ class AccountSessionTest {
         assertEquals("RockMobile — Pixel 9", presentDeviceDisplayName("rockmobile_android", "RockMobile — Pixel 9"))
         assertEquals("RockCast — Office", presentDeviceDisplayName("windows", "RockCast — Office"))
         assertEquals("RockMobile — Pixel 9", presentDeviceDisplayName("rockmobile_android", "RockCast — Pixel 9"))
+    }
+
+    @Test fun accountIdentity_usesRockMobileAndShowsInstalledBuild() {
+        assertEquals("Подключите RockMobile к существующему Rock-аккаунту.", disconnectedPrimaryCopy())
+        assertEquals("Радио и сохранённые станции работают без аккаунта.", disconnectedSecondaryCopy())
+        assertEquals("RockMobile", rockMobileTitle())
+        assertEquals("RockMobile logo", rockMobileLogoDescription())
+        assertTrue(visibleBuild().matches(Regex("0\\.1\\.1 \\([0-9a-f]{7}\\)")))
     }
 
     @Test fun pairingCompletion_sendsOnlyDesktopProof_neverUserId() {
@@ -164,6 +175,25 @@ class AccountSessionTest {
         }
     }
 
+    @Test fun viewModel_startingBlocksDuplicateCreateAndThenWaits() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val gateway = FakeGateway()
+            val viewModel = AccountViewModel(gateway, MemoryStore(), dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            viewModel.connect("RMX5056")
+            viewModel.connect("Second request")
+            assertEquals(AccountUiState.Starting, viewModel.state.value)
+            runCurrent()
+            assertTrue(viewModel.state.value is AccountUiState.Pairing)
+            assertEquals(1, gateway.createCalls)
+            viewModel.cancelPairing()
+            runCurrent()
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test fun viewModel_cancelStopsPairingWithoutSavingCredentials() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -289,6 +319,7 @@ class AccountSessionTest {
     }
 
     private class FakeGateway : AccountGateway {
+        var createCalls = 0
         var approved = false
         var createError: Throwable? = null
         var completionError: Throwable? = null
@@ -304,12 +335,13 @@ class AccountSessionTest {
             deviceType = "rockmobile_android",
         )
         override fun createPairing(deviceName: String): PairingRequest {
+            createCalls++
             createError?.let { throw it }
             return PairingRequest("request", "d".repeat(16), "secret", "AB12CD34", "AMBER-DAWN", deviceName, "rockmobile_android")
         }
         override fun completePairing(pairing: PairingRequest): Pair<AccountProfile, NativeCredentials> {
             completionError?.let { throw it }
-            if (!approved) throw ApiError(202)
+            if (!approved) throw ApiError(202, "pairing_pending")
             return profile to NativeCredentials("a".repeat(16), "b".repeat(16))
         }
         override fun refresh(refreshToken: String) = NativeCredentials("new-access-token-1234", "new-refresh-token-1234")

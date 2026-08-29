@@ -57,6 +57,7 @@ class AccountViewModel(
     }
 
     fun connect(deviceName: String) {
+        if (_state.value is AccountUiState.Starting || pairingJob?.isActive == true) return
         val normalizedName = deviceName.trim()
         validateDeviceDisplayName(normalizedName)?.let {
             _state.value = AccountUiState.Error(it)
@@ -64,6 +65,7 @@ class AccountViewModel(
         }
         pairingJob?.cancel()
         pendingPairing = null
+        _state.value = AccountUiState.Starting
         pairingJob = viewModelScope.launch {
             try {
                 val request = withContext(ioDispatcher) { gateway.createPairing(normalizedName) }
