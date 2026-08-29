@@ -3,7 +3,7 @@ package com.rockmobile.data.stations
 import com.rockmobile.data.api.HttpResponse
 import com.rockmobile.data.api.HttpTransport
 import com.rockmobile.data.api.RockserverApi
-import com.rockmobile.data.api.RockserverHttpException
+import com.rockmobile.data.api.ApiError
 import com.rockmobile.data.dto.parseRockserverStations
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -99,7 +99,7 @@ class StationSourcesTest {
     @Test fun remote_httpAndNetworkFailures_areExposed() {
         val http = RockserverApi(FakeTransport(503, "{}"))
         runCatching { http.search("http://server", "token", "rock") }.onSuccess { throw AssertionError("HTTP error accepted") }
-            .onFailure { assertTrue(it is RockserverHttpException) }
+            .onFailure { assertTrue(it is ApiError) }
         val offline = RockserverApi(object : HttpTransport { override fun post(url: String, bearerToken: String, jsonBody: String): HttpResponse = throw IOException("offline") })
         runCatching { offline.search("http://server", "token", "rock") }.onSuccess { throw AssertionError("network error accepted") }
     }

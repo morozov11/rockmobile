@@ -108,7 +108,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                     is AccountUiState.Pairing -> {
                         val request = state.request
                         val link = request.browserLink(baseUrl)
-                        Text("Целевое устройство: ${request.deviceDisplayName}")
+                        Text("Целевое устройство: ${presentDeviceDisplayName(request.deviceType, request.deviceDisplayName)}")
                         Text("Статус: ожидаем подтверждение в браузере")
                         Text("Действует до: ${formatPairingExpiry(request.expiresAt)}")
                         Spacer(Modifier.height(4.dp))
@@ -130,7 +130,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                             )
                         }
                         Text("Аккаунт: ${state.profile.accountDisplayName}")
-                        Text("Этот телефон: ${state.profile.deviceDisplayName}")
+                        Text("Этот телефон: ${presentDeviceDisplayName(state.profile.deviceType, state.profile.deviceDisplayName)}")
                         Text("Лимит аккаунта: до 10 устройств")
                         if (!state.devicesAvailable) {
                             Text("Список устройств временно недоступен. Подключение телефона уже не заблокировано; попробуйте обновить позже.")
@@ -141,7 +141,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                             state.devices.forEach { device ->
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
-                                        Text("${productName(device.deviceType)} — ${device.deviceDisplayName}")
+                                        Text(presentDeviceDisplayName(device.deviceType, device.deviceDisplayName))
                                         if (device.deviceId == state.profile.deviceId) Text("Этот телефон")
                                     }
                                     OutlinedButton(onClick = { deviceToRevoke = device }) { Text("Отключить") }
@@ -171,7 +171,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
         AlertDialog(
             onDismissRequest = { deviceToRevoke = null },
             title = { Text("Отключить устройство?") },
-            text = { Text("«${productName(device.deviceType)} — ${device.deviceDisplayName}» потеряет доступ к этому аккаунту.") },
+            text = { Text("«${presentDeviceDisplayName(device.deviceType, device.deviceDisplayName)}» потеряет доступ к этому аккаунту.") },
             confirmButton = {
                 Button(onClick = {
                     deviceToRevoke = null
@@ -189,9 +189,6 @@ private fun dialogTitle(state: AccountUiState): String = when (state) {
     is AccountUiState.Connected -> "Аккаунт и устройства"
     is AccountUiState.Error -> "Подключение аккаунта"
 }
-
-private fun productName(deviceType: String): String =
-    if (deviceType.contains("mobile", ignoreCase = true)) "RockMobile" else "RockCast"
 
 private fun formatPairingExpiry(value: String): String = runCatching {
     DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.getDefault())

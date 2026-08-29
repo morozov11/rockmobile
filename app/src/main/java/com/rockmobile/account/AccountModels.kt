@@ -6,7 +6,13 @@ import java.time.Instant
 private const val MAX_DEVICE_NAME_BYTES = 128
 
 internal fun defaultDeviceDisplayName(model: String): String =
-    "RockMobile — ${model.trim().ifBlank { "Android device" }}"
+    model.trim().ifBlank { "Android device" }
+
+internal fun presentDeviceDisplayName(deviceType: String, value: String): String {
+    val product = if (deviceType.contains("mobile", ignoreCase = true)) "RockMobile" else "RockCast"
+    val rawName = value.trim().removePrefix("RockMobile — ").removePrefix("RockCast — ")
+    return "$product — $rawName"
+}
 
 internal fun validateDeviceDisplayName(value: String): String? {
     val name = value.trim()
@@ -25,7 +31,7 @@ class PairingRequest(
     private val approvalSecret: String,
     val shortCode: String,
     val verificationPhrase: String,
-    val deviceDisplayName: String = "RockMobile",
+    val deviceDisplayName: String = "Android device",
     val deviceType: String = "rockmobile_android",
     val expiresAt: String = "",
     val status: String = "pending",
@@ -46,7 +52,7 @@ data class AccountProfile(
     val sessionId: String,
     val deviceId: String,
     val accountDisplayName: String = "Rock account",
-    val deviceDisplayName: String = "RockMobile",
+    val deviceDisplayName: String = "Android device",
     val deviceType: String = "rockmobile_android",
     val createdAt: String? = null,
     val deviceCreatedAt: String? = null,

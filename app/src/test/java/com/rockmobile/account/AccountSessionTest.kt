@@ -3,7 +3,7 @@ package com.rockmobile.account
 import com.rockmobile.data.api.HttpResponse
 import com.rockmobile.data.api.HttpTransport
 import com.rockmobile.data.api.RockserverApi
-import com.rockmobile.data.api.RockserverHttpException
+import com.rockmobile.data.api.ApiError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -22,10 +22,15 @@ import java.io.IOException
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountSessionTest {
     @Test fun deviceName_defaultsAndValidatesAgainstServerBounds() {
-        assertEquals("RockMobile — Pixel 9", defaultDeviceDisplayName("Pixel 9"))
-        assertTrue(validateDeviceDisplayName("  RockMobile — phone  ") == null)
+        assertEquals("Pixel 9", defaultDeviceDisplayName("Pixel 9"))
+        assertEquals("Android device", defaultDeviceDisplayName(" "))
+        assertTrue(validateDeviceDisplayName("  phone  ") == null)
         assertTrue(validateDeviceDisplayName(" ") != null)
         assertTrue(validateDeviceDisplayName("я".repeat(129)) != null)
+        assertEquals("RockMobile — Pixel 9", presentDeviceDisplayName("rockmobile_android", "Pixel 9"))
+        assertEquals("RockMobile — Pixel 9", presentDeviceDisplayName("rockmobile_android", "RockMobile — Pixel 9"))
+        assertEquals("RockCast — Office", presentDeviceDisplayName("windows", "RockCast — Office"))
+        assertEquals("RockMobile — Pixel 9", presentDeviceDisplayName("rockmobile_android", "RockCast — Pixel 9"))
     }
 
     @Test fun pairingCompletion_sendsOnlyDesktopProof_neverUserId() {
@@ -38,13 +43,13 @@ class AccountSessionTest {
     @Test fun createPairing_usesG1DeviceMetadataAndKeepsBrowserContext() {
         val transport = ScriptedTransport(post = HttpResponse(201, createdPairing))
         val pairing = RockserverAccountGateway(RockserverApi(transport)) { "https://server.test" }
-            .createPairing("RockMobile — Pixel 9")
+            .createPairing("Pixel 9")
 
-        assertEquals("RockMobile — Pixel 9", pairing.deviceDisplayName)
+        assertEquals("Pixel 9", pairing.deviceDisplayName)
         assertEquals("rockmobile_android", pairing.deviceType)
         assertEquals("https://server.test/?code=AB12CD34&secret=secret", pairing.browserLink("https://server.test"))
         val body = JSONObject(transport.body)
-        assertEquals("RockMobile — Pixel 9", body.getString("device_display_name"))
+        assertEquals("Pixel 9", body.getString("device_display_name"))
         assertEquals("rockmobile_android", body.getString("device_type"))
         assertFalse(body.has("device_name"))
         assertFalse(body.has("user_id"))
@@ -96,7 +101,7 @@ class AccountSessionTest {
         val transport = ScriptedTransport(post = HttpResponse(401, "{}"))
         val pairing = PairingRequest("request", "d".repeat(16), "secret", "AB12CD34", "AMBER-DAWN")
         val result = runCatching { RockserverAccountGateway(RockserverApi(transport)) { "https://server.test" }.completePairing(pairing) }
-        assertTrue(result.exceptionOrNull() is RockserverHttpException)
+        assertTrue(result.exceptionOrNull() is ApiError)
     }
 
     @Test fun gateway_mapsPendingCompletionToRetryableStatus() {
@@ -104,16 +109,35 @@ class AccountSessionTest {
         val pairing = PairingRequest("request", "d".repeat(16), "secret", "AB12CD34", "AMBER-DAWN")
         val error = runCatching {
             RockserverAccountGateway(RockserverApi(transport)) { "https://server.test" }.completePairing(pairing)
-        }.exceptionOrNull() as RockserverHttpException
+        }.exceptionOrNull() as ApiError
         assertEquals(202, error.statusCode)
     }
 
     @Test fun pairingPoll_retriesOnlyPendingApproval_beforeDeadline() {
-        val pending = RockserverHttpException(202)
-        assertTrue(shouldContinuePairing(pending, nowMs = 100, deadlineMs = 101))
-        assertFalse(shouldContinuePairing(pending, nowMs = 101, deadlineMs = 101))
-        assertFalse(shouldContinuePairing(RockserverHttpException(503), nowMs = 100, deadlineMs = 101))
-        assertFalse(shouldContinuePairing(RockserverHttpException(410), nowMs = 100, deadlineMs = 101))
+        assertTrue(shouldContinuePairing(ApiError(409, "pairing_pending"), nowMs = 100, deadlineMs = 101))
+        assertFalse(shouldContinuePairing(ApiError(202), nowMs = 100, deadlineMs = 101))
+        assertFalse(shouldContinuePairing(ApiError(202, "pairing_pending"), nowMs = 101, deadlineMs = 101))
+        assertFalse(shouldContinuePairing(ApiError(503), nowMs = 100, deadlineMs = 101))
+        assertFalse(shouldContinuePairing(ApiError(410), nowMs = 100, deadlineMs = 101))
+    }
+
+    @Test fun apiError_parsesOnlySafeTuple_andSupportsOldOrMalformedBodies() {
+        val parsed = ApiError.from(HttpResponse(409, """{"code":"device_limit_reached","request_id":"req-1","message":"secret","details":{"token":"secret"}}"""))
+        assertEquals(409, parsed.statusCode)
+        assertEquals("device_limit_reached", parsed.code)
+        assertEquals("req-1", parsed.requestId)
+        assertEquals(null, ApiError.from(HttpResponse(410, "not json")).code)
+        assertEquals(null, ApiError.from(HttpResponse(410, "{}")).requestId)
+    }
+
+    @Test fun pairingErrors_preferCanonicalCode_thenUseNarrowStatusFallbacks() {
+        assertTrue(pairingErrorMessage(ApiError(404, "pairing_rejected")).contains("отклонён"))
+        assertTrue(pairingErrorMessage(ApiError(404, "pairing_expired")).contains("истёк"))
+        assertTrue(pairingErrorMessage(ApiError(404, "client_upgrade_required")).contains("Обновите"))
+        assertTrue(pairingErrorMessage(ApiError(503, "pairing_unavailable")).contains("недоступен"))
+        assertTrue(pairingErrorMessage(ApiError(404, "unknown")).contains("Не удалось"))
+        assertTrue(pairingErrorMessage(ApiError(409)).contains("лимит"))
+        assertTrue(pairingErrorMessage(ApiError(410)).contains("недоступен"))
     }
 
     @Test fun viewModel_pairingWaitsResumesAndCompletesWithAccountName() = runTest {
@@ -179,7 +203,7 @@ class AccountSessionTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         try {
-            val already = FakeGateway().apply { completionError = RockserverHttpException(409) }
+            val already = FakeGateway().apply { completionError = ApiError(409) }
             val alreadyViewModel = AccountViewModel(already, MemoryStore(), dispatcher, { testScheduler.currentTime }, 1_000, 100)
             alreadyViewModel.connect("RockMobile — Pixel 9")
             runCurrent()
@@ -201,7 +225,7 @@ class AccountSessionTest {
         try {
             val gateway = FakeGateway().apply {
                 approved = true
-                devicesError = RockserverHttpException(404)
+                devicesError = ApiError(404)
             }
             val viewModel = AccountViewModel(gateway, MemoryStore(), dispatcher, { testScheduler.currentTime }, 1_000, 100)
             viewModel.connect("RockMobile — Pixel 9")
@@ -285,7 +309,7 @@ class AccountSessionTest {
         }
         override fun completePairing(pairing: PairingRequest): Pair<AccountProfile, NativeCredentials> {
             completionError?.let { throw it }
-            if (!approved) throw RockserverHttpException(202)
+            if (!approved) throw ApiError(202)
             return profile to NativeCredentials("a".repeat(16), "b".repeat(16))
         }
         override fun refresh(refreshToken: String) = NativeCredentials("new-access-token-1234", "new-refresh-token-1234")
@@ -300,7 +324,7 @@ class AccountSessionTest {
 
     private companion object {
         val createdPairing = """
-            {"pairing_request_id":"request","desktop_token":"${"d".repeat(16)}","approval_secret":"secret","short_code":"AB12CD34","verification_phrase":"AMBER-DAWN","device_display_name":"RockMobile — Pixel 9","device_type":"rockmobile_android","expires_at":"2099-08-28T12:00:00Z","status":"pending"}
+            {"pairing_request_id":"request","desktop_token":"${"d".repeat(16)}","approval_secret":"secret","short_code":"AB12CD34","verification_phrase":"AMBER-DAWN","device_display_name":"Pixel 9","device_type":"rockmobile_android","expires_at":"2099-08-28T12:00:00Z","status":"pending"}
         """.trimIndent()
         val tokens = """{"access_token":"${"a".repeat(16)}","refresh_token":"${"r".repeat(16)}"}"""
         val completion = """{"user_id":"user","device_id":"device","session_id":"session","access_token":"${"a".repeat(16)}","refresh_token":"${"r".repeat(16)}","account_display_name":"Alex's Rock account","device_display_name":"RockMobile — Pixel 9","device_type":"rockmobile_android"}"""

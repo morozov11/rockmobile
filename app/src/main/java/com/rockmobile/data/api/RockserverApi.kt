@@ -23,6 +23,25 @@ interface HttpTransport {
 
 data class HttpResponse(val code: Int, val body: String)
 
+/** Safe representation of a server error. Never retain the response body or request metadata. */
+class ApiError(
+    val status: Int,
+    val code: String? = null,
+    val requestId: String? = null,
+) : IOException("Rockserver returned HTTP $status") {
+    val statusCode: Int get() = status
+    companion object {
+        fun from(response: HttpResponse): ApiError {
+            val error = runCatching { JSONObject(response.body) }.getOrNull()
+            return ApiError(
+                status = response.code,
+                code = error?.optString("code")?.trim()?.takeIf(String::isNotEmpty),
+                requestId = error?.optString("request_id")?.trim()?.takeIf(String::isNotEmpty),
+            )
+        }
+    }
+}
+
 class UrlConnectionTransport : HttpTransport {
     override fun post(url: String, bearerToken: String, jsonBody: String): HttpResponse {
         return request("POST", url, bearerToken, jsonBody)
@@ -55,7 +74,7 @@ class RockserverApi(
         val endpoint = baseUrl.trim().trimEnd('/') + "/v1/search"
         val request = JSONObject().put("query", query).put("locale", "en-US").put("limit", 20)
         val response = transport.post(endpoint, bearerToken, request.toString())
-        if (response.code !in 200..299) throw RockserverHttpException(response.code)
+        if (response.code !in 200..299) throw ApiError.from(response)
         return response.body
     }
 
@@ -69,7 +88,7 @@ class RockserverApi(
             }
         }
         val response = transport.get(endpoint(baseUrl, "/v1/catalog/stations$query"), bearerToken)
-        if (response.code !in 200..299) throw RockserverHttpException(response.code)
+        if (response.code !in 200..299) throw ApiError.from(response)
         return response.body
     }
 
@@ -84,5 +103,3 @@ class RockserverApi(
 
     private fun endpoint(baseUrl: String, route: String) = baseUrl.trim().trimEnd('/') + route
 }
-
-class RockserverHttpException(val statusCode: Int) : IOException("Rockserver returned HTTP $statusCode")

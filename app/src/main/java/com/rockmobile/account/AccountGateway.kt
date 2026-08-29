@@ -1,7 +1,7 @@
 package com.rockmobile.account
 
 import com.rockmobile.data.api.RockserverApi
-import com.rockmobile.data.api.RockserverHttpException
+import com.rockmobile.data.api.ApiError
 import org.json.JSONObject
 
 interface AccountGateway {
@@ -21,7 +21,7 @@ class RockserverAccountGateway(private val api: RockserverApi, private val baseU
             .put("device_display_name", deviceName.trim())
             .put("device_type", "rockmobile_android")
             .put("app_version", "0.1.0"))
-        requireSuccess(response.code)
+        requireSuccess(response)
         val body = JSONObject(response.body)
         return PairingRequest(
             requestId = body.getString("pairing_request_id"),
@@ -38,40 +38,40 @@ class RockserverAccountGateway(private val api: RockserverApi, private val baseU
 
     override fun completePairing(pairing: PairingRequest): Pair<AccountProfile, NativeCredentials> {
         val response = api.post(baseUrl(), "/v1/pairing-requests/${pairing.requestId}/complete", body = pairing.completionBody())
-        if (response.code == 202) throw RockserverHttpException(202)
-        requireSuccess(response.code)
+        if (response.code == 202) throw ApiError.from(response)
+        requireSuccess(response)
         return completion(JSONObject(response.body))
     }
 
     override fun refresh(refreshToken: String): NativeCredentials {
         val response = api.post(baseUrl(), "/v1/auth/refresh", body = JSONObject().put("refresh_token", refreshToken))
-        requireSuccess(response.code)
+        requireSuccess(response)
         return credentials(JSONObject(response.body))
     }
 
     override fun profile(accessToken: String): AccountProfile {
         val response = api.get(baseUrl(), "/v1/account/profile", accessToken)
-        requireSuccess(response.code)
+        requireSuccess(response)
         return profile(JSONObject(response.body))
     }
 
     override fun devices(accessToken: String): List<AccountDevice> {
         val response = api.get(baseUrl(), "/v1/devices", accessToken)
-        requireSuccess(response.code)
+        requireSuccess(response)
         val devices = JSONObject(response.body).getJSONArray("devices")
         return List(devices.length()) { index -> device(devices.getJSONObject(index)) }
     }
 
     override fun revokeDevice(accessToken: String, deviceId: String) {
-        requireSuccess(api.delete(baseUrl(), "/v1/devices/$deviceId", accessToken).code)
+        requireSuccess(api.delete(baseUrl(), "/v1/devices/$deviceId", accessToken))
     }
 
     override fun logout(accessToken: String) {
-        requireSuccess(api.post(baseUrl(), "/v1/auth/logout", accessToken).code, allowUnauthorized = true)
+        requireSuccess(api.post(baseUrl(), "/v1/auth/logout", accessToken), allowUnauthorized = true)
     }
 
-    private fun requireSuccess(code: Int, allowUnauthorized: Boolean = false) {
-        if (code !in 200..299 && !(allowUnauthorized && code == 401)) throw RockserverHttpException(code)
+    private fun requireSuccess(response: com.rockmobile.data.api.HttpResponse, allowUnauthorized: Boolean = false) {
+        if (response.code !in 200..299 && !(allowUnauthorized && response.code == 401)) throw ApiError.from(response)
     }
 
     private fun completion(body: JSONObject) = profile(body) to credentials(body)

@@ -2,7 +2,7 @@ package com.rockmobile.account
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rockmobile.data.api.RockserverHttpException
+import com.rockmobile.data.api.ApiError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -20,7 +20,22 @@ private const val DEFAULT_PAIRING_TIMEOUT_MS = 10 * 60 * 1000L
 private const val DEFAULT_PAIRING_POLL_MS = 2_000L
 
 internal fun shouldContinuePairing(error: Throwable, nowMs: Long, deadlineMs: Long): Boolean =
-    error is RockserverHttpException && error.statusCode == 202 && nowMs < deadlineMs
+    error is ApiError && error.code == "pairing_pending" && nowMs < deadlineMs
+
+internal fun pairingErrorMessage(error: Throwable, deadlineReached: Boolean = false): String = when {
+    deadlineReached -> "Срок действия подключения истёк. Начните подключение заново."
+    error is ApiError && error.code == "pairing_rejected" -> "Запрос подключения отклонён. Создайте новый."
+    error is ApiError && error.code == "pairing_expired" -> "Срок действия подключения истёк. Начните подключение заново."
+    error is ApiError && error.code == "device_limit_reached" -> "Достигнут лимит устройств аккаунта. Отключите старое устройство и попробуйте снова."
+    error is ApiError && error.code == "client_upgrade_required" -> "Обновите RockMobile, чтобы продолжить подключение."
+    error is ApiError && error.code == "pairing_unavailable" -> "RockServer сейчас недоступен. Радио продолжает работать без сервера."
+    error is ApiError && error.statusCode == 409 -> "Достигнут лимит устройств аккаунта. Отключите старое устройство и попробуйте снова."
+    error is ApiError && error.statusCode == 410 -> "Запрос подключения больше недоступен. Создайте новый."
+    error is ApiError && error.statusCode >= 500 -> "RockServer сейчас недоступен. Радио продолжает работать без сервера."
+    error is ApiError -> "Не удалось подключить телефон. Проверьте ссылку и попробуйте снова."
+    error is IOException -> "RockServer сейчас недоступен. Радио продолжает работать без сервера."
+    else -> "Не удалось подключить телефон. Проверьте ссылку и попробуйте снова."
+}
 
 class AccountViewModel(
     private val gateway: AccountGateway,
@@ -94,7 +109,7 @@ class AccountViewModel(
             withContext(ioDispatcher) { store.save(fresh) }
             loadAccount()
         } catch (error: Exception) {
-            if (error is RockserverHttpException && error.statusCode == 401) {
+            if (error is ApiError && error.statusCode == 401) {
                 withContext(ioDispatcher) { store.clear() }
                 _state.value = AccountUiState.Disconnected
             } else if (localProfile != null) {
@@ -140,7 +155,7 @@ class AccountViewModel(
             authorized { gateway.devices(it) }
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: RockserverHttpException) {
+        } catch (error: ApiError) {
             if (error.statusCode == 401) throw error
             devicesAvailable = false
             emptyList()
@@ -160,7 +175,7 @@ class AccountViewModel(
         val credentials = withContext(ioDispatcher) { store.load() } ?: throw IllegalStateException("No session")
         return try {
             withContext(ioDispatcher) { block(credentials.accessToken) }
-        } catch (error: RockserverHttpException) {
+        } catch (error: ApiError) {
             if (error.statusCode != 401) throw error
             val fresh = withContext(ioDispatcher) { gateway.refresh(credentials.refreshToken).also(store::save) }
             withContext(ioDispatcher) { block(fresh.accessToken) }
@@ -198,15 +213,6 @@ class AccountViewModel(
         }
         pendingPairing = null
         _state.value = AccountUiState.Error("Срок действия подключения истёк. Начните подключение заново.")
-    }
-
-    private fun pairingErrorMessage(error: Throwable, deadlineReached: Boolean = false): String = when {
-        deadlineReached -> "Срок действия подключения истёк. Начните подключение заново."
-        error is RockserverHttpException && error.statusCode == 409 -> "Достигнут лимит устройств аккаунта. Отключите старое устройство и попробуйте снова."
-        error is RockserverHttpException && error.statusCode in 404..410 -> "Запрос подключения больше недоступен. Создайте новый."
-        error is RockserverHttpException && error.statusCode >= 500 -> "RockServer сейчас недоступен. Радио продолжает работать без сервера."
-        error is IOException -> "RockServer сейчас недоступен. Радио продолжает работать без сервера."
-        else -> "Не удалось подключить телефон. Проверьте ссылку и попробуйте снова."
     }
 
     override fun onCleared() { pairingJob?.cancel() }
