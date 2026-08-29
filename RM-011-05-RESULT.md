@@ -29,12 +29,12 @@ No RockServer, RockCast, OpenAPI, staging, account/device data, pairing URL cont
 | Check | Result |
 | --- | --- |
 | `git diff --check` | Passed before the implementation commit. |
-| `./gradlew.bat testDebugUnitTest --console=plain` from `C:\repos\rockmobile` | Blocked before Gradle startup: a separate process held `C:\Users\alex\.gradle\wrapper\dists\gradle-9.3.1-bin\23ovyewtku6u96viwx3xl3oks\gradle-9.3.1-bin.zip.lck`. The empty stale lock was removed after confirming no Java process, but two unrelated Java processes immediately reacquired the wrapper lock. Per repository instruction, no Gradle command was run in parallel with them. |
-| `lintDebug` / `assembleDebug` | Not run for the same active-wrapper-lock blocker; not substituted with a worktree-local Gradle invocation because repository instructions require Gradle from `C:\repos\rockmobile`. |
+| `./gradlew.bat testDebugUnitTest --console=plain` from `C:\repos\rockmobile` | Passed: 28 actionable tasks (8 executed, 20 up-to-date). |
+| `./gradlew.bat lintDebug --console=plain` from `C:\repos\rockmobile` | Passed. |
+| `./gradlew.bat assembleDebug --console=plain` from `C:\repos\rockmobile` | Passed: 38 actionable tasks (3 executed, 35 up-to-date). |
 
 ## Limitations
 
-- Automated Android compilation, unit test, lint and assemble gates remain to be rerun once the unrelated Gradle wrapper users have released the shared lock.
 - The verified App Link requires the server-owned `assetlinks.json` deployment; this change only prepares the fixed Android path and does not assume that deployment exists.
 - No browser, physical-device or staging flow was performed.
 
