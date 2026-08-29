@@ -2,6 +2,7 @@ package com.rockmobile.account
 
 import com.rockmobile.data.api.RockserverApi
 import com.rockmobile.data.api.ApiError
+import com.rockmobile.BuildConfig
 import org.json.JSONObject
 
 interface AccountGateway {
@@ -20,7 +21,7 @@ class RockserverAccountGateway(private val api: RockserverApi, private val baseU
         val response = api.post(baseUrl(), "/v1/pairing-requests", body = JSONObject()
             .put("device_display_name", deviceName.trim())
             .put("device_type", "rockmobile_android")
-            .put("app_version", "0.1.0"))
+            .put("app_version", BuildConfig.VERSION_NAME))
         requireSuccess(response)
         val body = JSONObject(response.body)
         return PairingRequest(

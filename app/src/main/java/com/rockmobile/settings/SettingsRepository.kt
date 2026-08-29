@@ -3,7 +3,7 @@ package com.rockmobile.settings
 import android.content.Context
 import android.content.SharedPreferences
 
-/** Central location for the public server URL; account credentials never live here. */
+/** Central location for the fixed public server URL; account credentials never live here. */
 class SettingsRepository(context: Context) {
     private val preferences = context.getSharedPreferences("rockmobile_settings", Context.MODE_PRIVATE)
 
@@ -11,11 +11,11 @@ class SettingsRepository(context: Context) {
         scrubLegacyRockserverDefaults(preferences)
     }
 
-    fun rockserverUrl(): String = preferences.getString(URL_KEY, PRODUCTION_BASE_URL)!!.ifBlank { PRODUCTION_BASE_URL }
+    fun rockserverUrl(): String = PRODUCTION_BASE_URL
     /** Anonymous catalogue/voice routes do not need a bearer token. Native account tokens use KeystoreCredentialStore. */
     fun bearerToken(): String = ""
-    fun updateRockserver(url: String, @Suppress("UNUSED_PARAMETER") bearerToken: String) {
-        preferences.edit().putString(URL_KEY, url.trim()).remove(TOKEN_KEY).apply()
+    fun updateRockserver(@Suppress("UNUSED_PARAMETER") url: String, @Suppress("UNUSED_PARAMETER") bearerToken: String) {
+        preferences.edit().remove(URL_KEY).remove(TOKEN_KEY).apply()
     }
 
     companion object {
@@ -32,16 +32,13 @@ class SettingsRepository(context: Context) {
     }
 }
 
-/** Replaces former LAN/emulator defaults and the shared bootstrap token with the official public client config. */
+/** Removes obsolete endpoint overrides and bootstrap credentials from official client installs. */
 internal fun scrubLegacyRockserverDefaults(preferences: SharedPreferences) {
     val editor = preferences.edit()
     var changed = false
     if (preferences.contains(SettingsRepository.URL_KEY)) {
-        val replacement = migratedStoredRockserverUrl(preferences.getString(SettingsRepository.URL_KEY, null).orEmpty())
-        if (replacement != null) {
-            editor.putString(SettingsRepository.URL_KEY, replacement)
-            changed = true
-        }
+        editor.remove(SettingsRepository.URL_KEY)
+        changed = true
     }
     if (preferences.contains(SettingsRepository.TOKEN_KEY)) {
         editor.remove(SettingsRepository.TOKEN_KEY)
@@ -50,17 +47,9 @@ internal fun scrubLegacyRockserverDefaults(preferences: SharedPreferences) {
     if (changed) editor.apply()
 }
 
-/** Returns the production URL when [stored] is a known legacy default; otherwise null (no change). */
+/** Returns the production URL for every legacy setting; official builds have no mutable endpoint. */
 internal fun migratedStoredRockserverUrl(stored: String): String? {
-    val url = stored.trim()
-    return if (url.isEmpty() ||
-        url == SettingsRepository.DEFAULT_EMULATOR_URL ||
-        url == SettingsRepository.DEFAULT_LAPTOP_URL
-    ) {
-        SettingsRepository.PRODUCTION_BASE_URL
-    } else {
-        null
-    }
+    return stored.takeIf { it.isNotEmpty() }?.let { SettingsRepository.PRODUCTION_BASE_URL }
 }
 
 /** Clears the shared bootstrap token; otherwise null (no change). */

@@ -17,9 +17,9 @@ class RockserverSettingsMigrationTest {
         assertEquals(SettingsRepository.PRODUCTION_BASE_URL, migratedStoredRockserverUrl("  "))
     }
 
-    @Test fun customUrl_isPreserved() {
-        assertNull(migratedStoredRockserverUrl("https://dev.example.test:8443"))
-        assertNull(migratedStoredRockserverUrl(SettingsRepository.PRODUCTION_BASE_URL))
+    @Test fun storedCustomUrl_becomesProduction() {
+        assertEquals(SettingsRepository.PRODUCTION_BASE_URL, migratedStoredRockserverUrl("https://dev.example.test:8443"))
+        assertEquals(SettingsRepository.PRODUCTION_BASE_URL, migratedStoredRockserverUrl(SettingsRepository.PRODUCTION_BASE_URL))
     }
 
     @Test fun bootstrapToken_isCleared() {
