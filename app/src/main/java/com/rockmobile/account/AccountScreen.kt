@@ -37,7 +37,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.roundToPx
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -47,6 +46,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> Unit) {
@@ -246,7 +246,7 @@ private fun QrCode(link: String, description: String) {
         val density = LocalDensity.current
         val target = maxWidth.coerceAtMost(320.dp).coerceAtLeast(256.dp)
         val matrix = remember(link) { pairingQrMatrix(link) }
-        val modulePixels = pairingQrModulePixels(matrix, with(density) { target.roundToPx() })
+        val modulePixels = pairingQrModulePixels(matrix, with(density) { target.toPx().roundToInt() })
         val bitmap = remember(link, modulePixels) {
             val size = matrix.width * modulePixels
             Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also { bitmap ->

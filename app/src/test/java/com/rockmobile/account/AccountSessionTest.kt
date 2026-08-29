@@ -1,5 +1,6 @@
 package com.rockmobile.account
 
+import com.rockmobile.isRockmobileReturnTarget
 import com.rockmobile.data.api.HttpResponse
 import com.rockmobile.data.api.HttpTransport
 import com.rockmobile.data.api.RockserverApi
@@ -10,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -23,8 +25,16 @@ import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountSessionTest {
+    @Test fun rockmobileReturnAppLink_accepts_only_the_exact_credentialFreeRoute() {
+        assertTrue(isRockmobileReturnTarget("https", "alex.vault57.ru", "/return/rockmobile", null, null))
+        assertFalse(isRockmobileReturnTarget("https", "alex.vault57.ru", "/", null, "secret=synthetic"))
+        assertFalse(isRockmobileReturnTarget("https", "alex.vault57.ru", "/return/rockmobile", "code=AB12CD34", null))
+        assertFalse(isRockmobileReturnTarget("https", "alex.vault57.ru", "/return/rockmobile", null, "secret=synthetic"))
+        assertFalse(isRockmobileReturnTarget("https", "not-alex.vault57.ru", "/return/rockmobile", null, null))
+    }
+
     @Test fun pairingQr_hasFourModuleQuietZone_integerScale_andSyntheticLink() {
-        val link = "https://server.test/?code=AB12CD34&secret=synthetic-proof"
+        val link = "https://server.test/?code=AB12CD34#secret=synthetic-proof"
         val matrix = pairingQrMatrix(link)
         val firstBlackX = (0 until matrix.width).first { x -> (0 until matrix.height).any { y -> matrix[x, y] } }
         val firstBlackY = (0 until matrix.height).first { y -> (0 until matrix.width).any { x -> matrix[x, y] } }
@@ -69,7 +79,7 @@ class AccountSessionTest {
 
         assertEquals("Pixel 9", pairing.deviceDisplayName)
         assertEquals("rockmobile_android", pairing.deviceType)
-        assertEquals("https://server.test/?code=AB12CD34&secret=secret", pairing.browserLink("https://server.test"))
+        assertEquals("https://server.test/?code=AB12CD34#secret=secret", pairing.browserLink("https://server.test"))
         val body = JSONObject(transport.body)
         assertEquals("Pixel 9", body.getString("device_display_name"))
         assertEquals("rockmobile_android", body.getString("device_type"))
@@ -233,9 +243,8 @@ class AccountSessionTest {
             val viewModel = AccountViewModel(FakeGateway(), store, dispatcher, { testScheduler.currentTime }, 300, 100)
             viewModel.connect("RockMobile — Pixel 9")
             runCurrent()
-            advanceTimeBy(300)
-            runCurrent()
-            assertTrue((viewModel.state.value as AccountUiState.Error).message.contains("истёк"))
+            advanceUntilIdle()
+            assertEquals("Ссылка истекла", (viewModel.state.value as AccountUiState.Error).message)
             assertEquals(null, store.credentials)
         } finally {
             Dispatchers.resetMain()

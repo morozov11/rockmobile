@@ -2,6 +2,7 @@ package com.rockmobile
 
 import android.os.Bundle
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -57,7 +58,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             RockmobileTheme {
             val model: StationsViewModel = viewModel(factory = StationsViewModelFactory(repository, unavailableVoiceStations::unavailableStationIds))
-            val account: AccountViewModel = viewModel(factory = AccountViewModelFactory(RockserverAccountGateway(RockserverApi(), settings::rockserverUrl), KeystoreCredentialStore(applicationContext))).also { accountViewModel = it }
+            val account = viewModel<AccountViewModel>(factory = AccountViewModelFactory(RockserverAccountGateway(RockserverApi(), settings::rockserverUrl), KeystoreCredentialStore(applicationContext))).also { accountViewModel = it }
+            androidx.compose.runtime.LaunchedEffect(account) {
+                if (isRockmobileReturnIntent(intent)) account.resumePairing(fromBrowser = true)
+            }
             val state = model.state.collectAsStateWithLifecycle().value
             val personal = personalData.state.collectAsStateWithLifecycle().value
             val playback = androidx.compose.runtime.remember { PlaybackController(this, unavailableVoiceStations) }
@@ -97,9 +101,28 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.data?.path == "/return/rockmobile") accountViewModel?.resumePairing(fromBrowser = true)
+        if (isRockmobileReturnIntent(intent)) accountViewModel?.resumePairing(fromBrowser = true)
     }
 }
+
+/** Accepts only the credential-free Android App Link that resumes an in-memory pairing poll. */
+internal fun isRockmobileReturnIntent(intent: Intent): Boolean =
+    intent.action == Intent.ACTION_VIEW && isRockmobileReturnUri(intent.data)
+
+/** Matches the exact, credential-free browser return endpoint owned by RockMobile. */
+internal fun isRockmobileReturnUri(uri: Uri?): Boolean =
+    uri != null && isRockmobileReturnTarget(uri.scheme, uri.host, uri.path, uri.query, uri.fragment)
+
+/** Checks return-link components separately so the credential boundary has a JVM unit test. */
+internal fun isRockmobileReturnTarget(
+    scheme: String?,
+    host: String?,
+    path: String?,
+    query: String?,
+    fragment: String?,
+): Boolean =
+    scheme == "https" && host == "alex.vault57.ru" && path == "/return/rockmobile" &&
+        query == null && fragment == null
 
 private class StationsViewModelFactory(
     private val repository: StationRepository,

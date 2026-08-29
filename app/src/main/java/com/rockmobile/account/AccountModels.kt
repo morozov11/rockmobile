@@ -36,7 +36,8 @@ class PairingRequest(
     val expiresAt: String = "",
     val status: String = "pending",
 ) {
-    fun browserLink(baseUrl: String): String = "${baseUrl.trimEnd('/')}/?code=$shortCode&secret=$approvalSecret"
+    /** Builds the browser handoff without placing the approval secret in the request query. */
+    fun browserLink(baseUrl: String): String = "${baseUrl.trimEnd('/')}/?code=$shortCode#secret=$approvalSecret"
     internal fun completionBody(): JSONObject = JSONObject().put("desktop_token", desktopToken)
     internal fun expiresAtMs(): Long? = expiresAt.takeIf(String::isNotBlank)?.let {
         runCatching { Instant.parse(it).toEpochMilli() }.getOrNull()
