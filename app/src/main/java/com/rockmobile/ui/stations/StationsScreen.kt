@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.rockmobile.data.personal.PersonalData
@@ -37,7 +41,10 @@ fun StationsScreen(
     toggleFavourite: (Station) -> Unit,
     openAccount: () -> Unit,
     accountConnected: Boolean = false,
+    clearHistory: () -> Unit,
 ) {
+    var favouritesOpen by rememberSaveable { mutableStateOf(false) }
+    var historyOpen by rememberSaveable { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(
             Modifier
@@ -54,7 +61,11 @@ fun StationsScreen(
                 is StationsUiState.Content -> {
                     state.fallbackReason?.let { FallbackBanner(it) }
                     CatalogueHeader(state.catalogue.source.name, state.stations.size)
-                    PersonalSummary(personal, state.catalogue.stations, play)
+                    PersonalSummary(
+                        personal,
+                        onOpenFavourites = { favouritesOpen = true },
+                        onOpenHistory = { historyOpen = true },
+                    )
                     SearchAndFilters(state, voice, updateFilters, onVoice, onFinishVoice, onCancelVoice)
                     VoiceStatusBar(voice, onCancelVoice, onDismissVoice)
                     MiniPlayer(playback, toggle, openPlayer)
@@ -68,6 +79,23 @@ fun StationsScreen(
                         toggleFavourite = toggleFavourite,
                     )
                 }
+            }
+            if (favouritesOpen && state is StationsUiState.Content) {
+                PersonalFavouritesDialog(
+                    data = personal,
+                    stations = state.catalogue.stations,
+                    onDismiss = { favouritesOpen = false },
+                    onPlay = { station -> play(station, state.stations) },
+                )
+            }
+            if (historyOpen && state is StationsUiState.Content) {
+                PersonalHistoryDialog(
+                    data = personal,
+                    stations = state.catalogue.stations,
+                    onDismiss = { historyOpen = false },
+                    onPlay = { station -> play(station, state.stations) },
+                    onClearHistory = clearHistory,
+                )
             }
         }
     }

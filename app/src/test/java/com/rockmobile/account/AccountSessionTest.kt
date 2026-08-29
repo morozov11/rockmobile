@@ -175,6 +175,7 @@ class AccountSessionTest {
         try {
             val gateway = FakeGateway().apply { completionError = IOException("offline") }
             val viewModel = AccountViewModel(gateway, MemoryStore(), dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            runCurrent()
             viewModel.connect("RockMobile — Pixel 9")
             runCurrent()
             assertTrue(viewModel.state.value is AccountUiState.Pairing)
@@ -227,6 +228,7 @@ class AccountSessionTest {
             val gateway = FakeGateway()
             val store = MemoryStore()
             val viewModel = AccountViewModel(gateway, store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            runCurrent()
             viewModel.connect("RockMobile — Pixel 9")
             runCurrent()
             assertTrue(viewModel.state.value is AccountUiState.Pairing)
@@ -332,6 +334,7 @@ class AccountSessionTest {
                 devicesError = ApiError(404)
             }
             val viewModel = AccountViewModel(gateway, MemoryStore(), dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            runCurrent()
             viewModel.connect("RockMobile — Pixel 9")
             runCurrent()
             val connected = viewModel.state.value as AccountUiState.ConnectedFirstTime
@@ -341,11 +344,38 @@ class AccountSessionTest {
         }
     }
 
+    @Test fun viewModel_skipsStaleRefreshWhenCredentialsAlreadyRotated() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            var gatewayRefreshCalls = 0
+            val gateway = object : FakeGateway() {
+                override fun refresh(refreshToken: String): NativeCredentials {
+                    gatewayRefreshCalls++
+                    throw ApiError(401, "authentication_required")
+                }
+            }
+            val store = StaleRefreshStore()
+            val viewModel = AccountViewModel(gateway, store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            runCurrent()
+            assertEquals(0, gatewayRefreshCalls)
+            assertEquals("new".repeat(16), store.credentials?.refreshToken)
+            assertTrue(viewModel.state.value is AccountUiState.Connected)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test fun viewModel_refreshLogoutAndRevokeUseStoredSession() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         try {
-            val gateway = FakeGateway().apply { approved = true }
+            val gateway = object : FakeGateway() {
+                override fun profile(accessToken: String): AccountProfile {
+                    if (accessToken.startsWith("o")) throw ApiError(401, "authentication_required")
+                    return super.profile(accessToken)
+                }
+            }
             val store = MemoryStore().apply { credentials = NativeCredentials("o".repeat(16), "r".repeat(16)) }
             val viewModel = AccountViewModel(gateway, store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
             runCurrent()
@@ -357,6 +387,22 @@ class AccountSessionTest {
             runCurrent()
             assertTrue(gateway.loggedOut)
             assertEquals(null, store.credentials)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun viewModel_bootstrapLoadsAccountWhenProfileIsNotCachedLocally() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val store = MemoryStore().apply {
+                credentials = NativeCredentials("o".repeat(16), "r".repeat(16))
+            }
+            val viewModel = AccountViewModel(FakeGateway(), store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            runCurrent()
+            assertTrue(viewModel.state.value is AccountUiState.Connected)
+            assertEquals("Alex's Rock account", store.profile?.accountDisplayName)
         } finally {
             Dispatchers.resetMain()
         }
@@ -394,6 +440,7 @@ class AccountSessionTest {
         try {
             val gateway = FakeGateway().apply { approved = true }
             val viewModel = AccountViewModel(gateway, MemoryStore(), dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            runCurrent()
             viewModel.connect("RockMobile — Pixel 9")
             runCurrent()
             assertTrue(viewModel.state.value is AccountUiState.ConnectedFirstTime)
@@ -441,7 +488,37 @@ class AccountSessionTest {
         }
     }
 
-    private class FakeGateway : AccountGateway {
+  /** First load returns an old refresh token; later loads expose already-rotated credentials. */
+    private class StaleRefreshStore : CredentialStore {
+        private val old = NativeCredentials("old-access-token-1234", "old".repeat(16))
+        private val new = NativeCredentials("new-access-token-1234", "new".repeat(16))
+        private val profile = AccountProfile(
+            userId = "owner",
+            sessionId = "session",
+            deviceId = "device",
+            accountDisplayName = "Alex's Rock account",
+            deviceDisplayName = "RockMobile — Pixel 9",
+            deviceType = "rockmobile_android",
+        )
+        var credentials: NativeCredentials? = old
+        private var loadCount = 0
+        override fun load(): NativeCredentials? {
+            if (loadCount == 0) {
+                loadCount++
+                return old
+            }
+            credentials = new
+            return new
+        }
+        override fun save(credentials: NativeCredentials) { this.credentials = credentials }
+        override fun loadProfile() = profile
+        override fun saveProfile(profile: AccountProfile) = Unit
+        override fun clear() {
+            credentials = null
+        }
+    }
+
+    private open class FakeGateway : AccountGateway {
         var createCalls = 0
         var approved = false
         var createError: Throwable? = null

@@ -60,7 +60,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.resumePairing(fromBrowser = true)
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.resumePairing(fromBrowser = false)
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }

@@ -80,13 +80,32 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun PersonalSummary(data: PersonalData, stations: List<Station>, play: (Station, List<Station>) -> Unit) {
-    val byId = stations.associateBy { it.id }
-    val favourites = data.favourites.mapNotNull { byId[it.stationId] }
-    if (favourites.isNotEmpty() || data.history.isNotEmpty()) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = false, onClick = { favourites.firstOrNull()?.let { play(it, favourites) } }, label = { Text("Favourites ${favourites.size}") })
-            FilterChip(selected = false, onClick = { data.history.firstNotNullOfOrNull { byId[it.stationId] }?.let { play(it, stations) } }, label = { Text("History ${data.history.size}") })
+internal fun PersonalSummary(
+    data: PersonalData,
+    onOpenFavourites: () -> Unit,
+    onOpenHistory: () -> Unit,
+) {
+    if (data.favourites.isEmpty() && data.history.isEmpty()) return
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (data.favourites.isNotEmpty()) {
+            FilterChip(
+                selected = false,
+                onClick = onOpenFavourites,
+                label = { Text("Favourites ${data.favourites.size}") },
+            )
+        }
+        if (data.history.isNotEmpty()) {
+            FilterChip(
+                selected = false,
+                onClick = onOpenHistory,
+                label = { Text("History ${data.history.size}") },
+            )
         }
     }
 }

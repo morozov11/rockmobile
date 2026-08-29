@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import kotlin.math.min
@@ -65,11 +67,17 @@ class AccountViewModel(
     val state: StateFlow<AccountUiState> = _state.asStateFlow()
     private var pairingJob: Job? = null
     private var pendingPairing: PendingPairing? = null
+    private val sessionRefreshMutex = Mutex()
+    private val accountSessionMutex = Mutex()
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch { bootstrapAccountState() }
+    }
+
+    private suspend fun bootstrapAccountState() {
+        refreshAccountInternal()
+        if (!accountSessionActive(_state.value)) {
             restorePendingPairing()
-            refreshAccountInternal()
         }
     }
 
@@ -115,10 +123,21 @@ class AccountViewModel(
                 pairingJob?.cancel()
                 clearPendingPairingStorage()
                 _state.value = AccountUiState.Error("Ссылка истекла", AccountErrorAction.NewLink)
-            } else if (fromBrowser && _state.value is AccountUiState.Pairing) {
-                _state.value = (_state.value as AccountUiState.Pairing).copy(returningFromBrowser = true)
-            } else if (pairingJob?.isActive != true) {
-                pairingJob = viewModelScope.launch {
+                return@launch
+            }
+            when (val current = _state.value) {
+                is AccountUiState.Pairing -> if (fromBrowser) {
+                    _state.value = current.copy(returningFromBrowser = true)
+                }
+                else -> if (!accountSessionActive(current)) {
+                    _state.value = AccountUiState.Pairing(
+                        pending.request,
+                        returningFromBrowser = fromBrowser,
+                    )
+                }
+            }
+            if (pairingJob?.isActive != true) {
+                pairingJob = launch {
                     try { awaitPairing(pending) } catch (_: CancellationException) { }
                 }
             }
@@ -137,10 +156,10 @@ class AccountViewModel(
     fun ensureSessionVisible() {
         if (accountSessionActive(_state.value)) return
         viewModelScope.launch {
-            val profile = withContext(ioDispatcher) { store.loadProfile() }
-            val credentials = withContext(ioDispatcher) { store.load() }
-            if (credentials == null || profile == null) return@launch
-            loadAccount(profile)
+            accountSessionMutex.withLock {
+                if (accountSessionActive(_state.value)) return@launch
+                probeStoredSession()
+            }
         }
     }
 
@@ -156,15 +175,20 @@ class AccountViewModel(
     fun refreshAccount() = viewModelScope.launch { refreshAccountInternal() }
 
     private suspend fun refreshAccountInternal() {
+        accountSessionMutex.withLock {
+            probeStoredSession()
+        }
+    }
+
+    private suspend fun probeStoredSession() {
         val localProfile = withContext(ioDispatcher) { store.loadProfile() }
+        if (withContext(ioDispatcher) { store.load() } == null) return
         try {
-            val credentials = withContext(ioDispatcher) { store.load() } ?: return
-            val fresh = withContext(ioDispatcher) { gateway.refresh(credentials.refreshToken) }
-            withContext(ioDispatcher) { store.save(fresh) }
-            loadAccount()
+            loadAccount(localProfile)
         } catch (error: Exception) {
             if (error is ApiError && error.statusCode == 401) {
-                withContext(ioDispatcher) { store.clear() }
+                pairingJob?.cancel()
+                pendingPairing = null
                 _state.value = AccountUiState.Disconnected
             } else if (localProfile != null) {
                 _state.value = AccountUiState.Connected(
@@ -231,10 +255,32 @@ class AccountViewModel(
             withContext(ioDispatcher) { block(credentials.accessToken) }
         } catch (error: ApiError) {
             if (error.statusCode != 401) throw error
-            val fresh = withContext(ioDispatcher) { gateway.refresh(credentials.refreshToken).also(store::save) }
+            val fresh = rotateRefreshToken(credentials.refreshToken)
             withContext(ioDispatcher) { block(fresh.accessToken) }
         }
     }
+
+    private suspend fun rotateRefreshToken(expectedRefreshToken: String): NativeCredentials =
+        sessionRefreshMutex.withLock {
+            val current = withContext(ioDispatcher) { store.load() }
+                ?: throw IllegalStateException("No session")
+            if (current.refreshToken != expectedRefreshToken) {
+                return current
+            }
+            try {
+                withContext(ioDispatcher) {
+                    gateway.refresh(current.refreshToken).also { store.save(it) }
+                }
+            } catch (error: ApiError) {
+                if (error.statusCode == 401) {
+                    val stillCurrent = withContext(ioDispatcher) { store.load() }
+                    if (stillCurrent?.refreshToken == expectedRefreshToken) {
+                        withContext(ioDispatcher) { store.clear() }
+                    }
+                }
+                throw error
+            }
+        }
 
     private suspend fun awaitPairing(pending: PendingPairing) {
         while (pendingPairing == pending && nowMs() < pending.deadlineMs) {

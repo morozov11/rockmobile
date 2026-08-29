@@ -95,7 +95,7 @@ class MainActivity : ComponentActivity() {
                     if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) voice.start()
                     else { voice.requestPermission(); microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
                 }, onFinishVoice = voice::finishRecording, onCancelVoice = voice::cancel, onDismissVoice = voice::dismiss,
-                openPlayer = { playerScreen = true }, personal = personal, toggleFavourite = { station -> personalData.toggleFavourite(station) }, openAccount = { account.ensureSessionVisible(); accountOpen = true }, accountConnected = accountConnected,
+                openPlayer = { playerScreen = true }, personal = personal, toggleFavourite = { station -> personalData.toggleFavourite(station) }, openAccount = { account.ensureSessionVisible(); accountOpen = true }, accountConnected = accountConnected, clearHistory = personalData::clearHistory,
             )
             if (accountOpen) AccountDialog(account, settings.rockserverUrl()) { accountOpen = false }
             }

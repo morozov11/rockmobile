@@ -106,6 +106,16 @@ class PersonalDataStore(context: Context) {
         } else value.history + HistoryEntry(UUID.randomUUID().toString(), station.id, now.toString(), now.toString(), now.toString(), 0, station.name, source = source)
         update(value.copy(history = history, lastPlayedStationId = station.id))
     }
+    fun clearHistory() {
+        requireWritable()
+        val value = _state.value
+        update(
+            value.copy(
+                history = emptyList(),
+                unresolved = value.unresolved.filter { it.sourceKind != "history" },
+            ),
+        )
+    }
     fun rollbackMigration(): Boolean {
         requireWritable(); val raw = prefs.getString(BACKUP, null) ?: return false
         val restored = read(raw); check(restored.error == null)
