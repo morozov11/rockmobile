@@ -1,6 +1,7 @@
 package com.rockmobile
 
 import android.os.Bundle
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -39,6 +40,7 @@ import com.rockmobile.account.KeystoreCredentialStore
 import com.rockmobile.account.RockserverAccountGateway
 
 class MainActivity : ComponentActivity() {
+    private var accountViewModel: AccountViewModel? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -55,7 +57,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             RockmobileTheme {
             val model: StationsViewModel = viewModel(factory = StationsViewModelFactory(repository, unavailableVoiceStations::unavailableStationIds))
-            val account: AccountViewModel = viewModel(factory = AccountViewModelFactory(RockserverAccountGateway(RockserverApi(), settings::rockserverUrl), KeystoreCredentialStore(applicationContext)))
+            val account: AccountViewModel = viewModel(factory = AccountViewModelFactory(RockserverAccountGateway(RockserverApi(), settings::rockserverUrl), KeystoreCredentialStore(applicationContext))).also { accountViewModel = it }
             val state = model.state.collectAsStateWithLifecycle().value
             val personal = personalData.state.collectAsStateWithLifecycle().value
             val playback = androidx.compose.runtime.remember { PlaybackController(this, unavailableVoiceStations) }
@@ -90,6 +92,12 @@ class MainActivity : ComponentActivity() {
             if (accountOpen) AccountDialog(account, settings.rockserverUrl()) { accountOpen = false }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.data?.path == "/return/rockmobile") accountViewModel?.resumePairing(fromBrowser = true)
     }
 }
 

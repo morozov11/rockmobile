@@ -8,6 +8,7 @@ import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,7 +26,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,13 +35,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.roundToPx
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.MultiFormatWriter
 import com.rockmobile.BuildConfig
 import java.time.Instant
 import java.time.ZoneId
@@ -57,10 +57,9 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
     var nameError by rememberSaveable { mutableStateOf<String?>(null) }
     var deviceToRevoke by remember { mutableStateOf<AccountDevice?>(null) }
 
-    LaunchedEffect(Unit) { viewModel.resumePairing() }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.resumePairing()
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.resumePairing(fromBrowser = true)
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -120,18 +119,41 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                     is AccountUiState.Pairing -> {
                         val request = state.request
                         val link = request.browserLink(baseUrl)
-                        Text("Целевое устройство: ${presentDeviceDisplayName(request.deviceType, request.deviceDisplayName)}")
-                        Text("Статус: ожидаем подтверждение в браузере")
-                        Text("Действует до: ${formatPairingExpiry(request.expiresAt)}")
-                        Spacer(Modifier.height(4.dp))
-                        QrCode(link)
-                        Text("Отсканируйте QR-код на другом устройстве или откройте защищённую ссылку на этом телефоне.")
-                        OutlinedButton(onClick = {
+                        Text("Шаг 1 из 2 · Подтвердите в браузере")
+                        Text(presentDeviceDisplayName(request.deviceType, request.deviceDisplayName))
+                        Text(pairingExpiryDescription(request.expiresAt))
+                        Button(onClick = {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
-                        }) { Text("Открыть защищённую ссылку для подключения") }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Открыть защищённую ссылку") }
                         Text("Проверочная фраза: ${request.verificationPhrase}")
-                        Text("Приложение ждёт подтверждение до истечения срока. Секрет pairing хранится только в защищённой сессии приложения.")
-                        OutlinedButton(onClick = viewModel::cancelPairing) { Text("Отменить подключение") }
+                        if (state.returningFromBrowser) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.size(8.dp))
+                                Text("Завершаем подключение…")
+                            }
+                        }
+                        var showOtherDevice by rememberSaveable(request.requestId) { mutableStateOf(false) }
+                        OutlinedButton(onClick = { showOtherDevice = !showOtherDevice }) {
+                            Text("Подключить через другое устройство")
+                        }
+                        if (showOtherDevice) {
+                            QrCode(
+                                link = link,
+                                description = "QR-код для ${presentDeviceDisplayName(request.deviceType, request.deviceDisplayName)}; ${pairingExpiryDescription(request.expiresAt)}",
+                            )
+                            Text("Откройте камеру на другом устройстве, войдите с passkey, сравните фразу и подтвердите подключение.")
+                        }
+                        TextButton(onClick = viewModel::cancelPairing) { Text("Отменить") }
+                    }
+
+                    is AccountUiState.ConnectedFirstTime -> {
+                        Text("✓", style = MaterialTheme.typography.displayMedium, color = MaterialTheme.colorScheme.primary)
+                        Text("RockMobile подключён", style = MaterialTheme.typography.headlineSmall)
+                        Text("Аккаунт: ${state.profile.accountDisplayName}")
+                        Text("Это устройство: ${presentDeviceDisplayName(state.profile.deviceType, state.profile.deviceDisplayName)}")
+                        Button(onClick = dismiss, modifier = Modifier.fillMaxWidth()) { Text("Готово") }
+                        OutlinedButton(onClick = viewModel::openDevices, modifier = Modifier.fillMaxWidth()) { Text("Открыть устройства") }
                     }
 
                     is AccountUiState.Connected -> {
@@ -150,13 +172,16 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                             Text("Подключённых устройств пока нет.")
                         } else {
                             Text("Устройства аккаунта")
-                            state.devices.forEach { device ->
+                            state.devices.sortedByDescending { it.deviceId == state.profile.deviceId }.forEach { device ->
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
                                         Text(presentDeviceDisplayName(device.deviceType, device.deviceDisplayName))
                                         if (device.deviceId == state.profile.deviceId) Text("Этот телефон")
+                                        formatDeviceActivity(device)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                                     }
-                                    OutlinedButton(onClick = { deviceToRevoke = device }) { Text("Отключить") }
+                                    if (device.deviceId != state.profile.deviceId) {
+                                        OutlinedButton(onClick = { deviceToRevoke = device }) { Text("Отключить") }
+                                    }
                                 }
                             }
                         }
@@ -166,10 +191,13 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
 
                     is AccountUiState.Error -> {
                         Text(state.message, color = MaterialTheme.colorScheme.error)
-                        if (state.canRetryConnection) {
-                            Button(onClick = { viewModel.connect(deviceName) }) { Text("Попробовать снова") }
-                        } else {
-                            OutlinedButton(onClick = viewModel::refreshAccount) { Text("Обновить") }
+                        when (state.action) {
+                            AccountErrorAction.Retry -> Button(onClick = { viewModel.connect(deviceName) }) { Text("Повторить") }
+                            AccountErrorAction.NewLink -> Button(onClick = { viewModel.connect(deviceName) }) { Text("Создать новую") }
+                            AccountErrorAction.Restart -> Button(onClick = { viewModel.connect(deviceName) }) { Text("Начать заново") }
+                            AccountErrorAction.OpenDevices -> OutlinedButton(onClick = viewModel::refreshAccount) { Text("Открыть устройства") }
+                            AccountErrorAction.UpdateApp -> Text("Для продолжения установите новую версию RockMobile.")
+                            AccountErrorAction.None -> Unit
                         }
                         Text("Анонимное радио продолжает работать без аккаунта.")
                     }
@@ -201,6 +229,7 @@ private fun dialogTitle(state: AccountUiState): String = when (state) {
     AccountUiState.Disconnected -> "Rock-аккаунт"
     AccountUiState.Starting -> "Подключение RockMobile"
     is AccountUiState.Pairing -> "Подключение телефона"
+    is AccountUiState.ConnectedFirstTime -> "Подключение завершено"
     is AccountUiState.Connected -> "Аккаунт и устройства"
     is AccountUiState.Error -> "Подключение аккаунта"
 }
@@ -211,23 +240,32 @@ internal fun disconnectedSecondaryCopy() = "Радио и сохранённые
 
 internal fun visibleBuild() = "${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_REVISION})"
 
-private fun formatPairingExpiry(value: String): String = runCatching {
-    DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.getDefault())
-        .withZone(ZoneId.systemDefault())
-        .format(Instant.parse(value))
-}.getOrDefault(value.ifBlank { "ограниченное время" })
-
 @Composable
-private fun QrCode(value: String) {
-    val bitmap = remember(value) {
-        val matrix = MultiFormatWriter().encode(value, BarcodeFormat.QR_CODE, 360, 360)
-        Bitmap.createBitmap(matrix.width, matrix.height, Bitmap.Config.ARGB_8888).also { bitmap ->
-            for (y in 0 until matrix.height) {
-                for (x in 0 until matrix.width) {
-                    bitmap.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
+private fun QrCode(link: String, description: String) {
+    BoxWithConstraints {
+        val density = LocalDensity.current
+        val target = maxWidth.coerceAtMost(320.dp).coerceAtLeast(256.dp)
+        val matrix = remember(link) { pairingQrMatrix(link) }
+        val modulePixels = pairingQrModulePixels(matrix, with(density) { target.roundToPx() })
+        val bitmap = remember(link, modulePixels) {
+            val size = matrix.width * modulePixels
+            Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also { bitmap ->
+                for (y in 0 until matrix.height) for (x in 0 until matrix.width) {
+                    val color = if (matrix[x, y]) Color.BLACK else Color.WHITE
+                    for (dy in 0 until modulePixels) for (dx in 0 until modulePixels) {
+                        bitmap.setPixel(x * modulePixels + dx, y * modulePixels + dy, color)
+                    }
                 }
             }
         }
+        Image(bitmap.asImageBitmap(), description, Modifier.size(with(density) { bitmap.width.toDp() }))
     }
-    Image(bitmap.asImageBitmap(), "QR-код подключения", Modifier.size(180.dp))
+}
+
+private fun formatDeviceActivity(device: AccountDevice): String? = device.lastSeenAt?.let { value ->
+    runCatching {
+        DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.getDefault())
+            .withZone(ZoneId.systemDefault())
+            .format(Instant.parse(value))
+    }.getOrNull()?.let { "Последняя активность: $it" }
 }

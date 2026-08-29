@@ -23,6 +23,17 @@ import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountSessionTest {
+    @Test fun pairingQr_hasFourModuleQuietZone_integerScale_andSyntheticLink() {
+        val link = "https://server.test/?code=AB12CD34&secret=synthetic-proof"
+        val matrix = pairingQrMatrix(link)
+        val firstBlackX = (0 until matrix.width).first { x -> (0 until matrix.height).any { y -> matrix[x, y] } }
+        val firstBlackY = (0 until matrix.height).first { y -> (0 until matrix.width).any { x -> matrix[x, y] } }
+        assertTrue(firstBlackX >= QR_QUIET_ZONE_MODULES)
+        assertTrue(firstBlackY >= QR_QUIET_ZONE_MODULES)
+        assertEquals(6, pairingQrModulePixels(matrix, matrix.width * 6 + 5))
+        assertTrue(link.startsWith("https://server.test/?code="))
+    }
+
     @Test fun deviceName_defaultsAndValidatesAgainstServerBounds() {
         assertEquals("RMX5056", defaultDeviceDisplayName("RMX5056"))
         assertEquals("Pixel 9", defaultDeviceDisplayName("Pixel 9"))
@@ -142,8 +153,8 @@ class AccountSessionTest {
     }
 
     @Test fun pairingErrors_preferCanonicalCode_thenUseNarrowStatusFallbacks() {
-        assertTrue(pairingErrorMessage(ApiError(404, "pairing_rejected")).contains("отклонён"))
-        assertTrue(pairingErrorMessage(ApiError(404, "pairing_expired")).contains("истёк"))
+        assertEquals("Подключение не подтверждено", pairingErrorMessage(ApiError(404, "pairing_rejected")))
+        assertEquals("Ссылка истекла", pairingErrorMessage(ApiError(404, "pairing_expired")))
         assertTrue(pairingErrorMessage(ApiError(404, "client_upgrade_required")).contains("Обновите"))
         assertTrue(pairingErrorMessage(ApiError(503, "pairing_unavailable")).contains("недоступен"))
         assertTrue(pairingErrorMessage(ApiError(404, "unknown")).contains("Не удалось"))
@@ -167,9 +178,11 @@ class AccountSessionTest {
             advanceTimeBy(100)
             runCurrent()
 
-            val connected = viewModel.state.value as AccountUiState.Connected
-            assertEquals("Этот телефон подключён к Alex's Rock account", connected.message)
+            val connected = viewModel.state.value as AccountUiState.ConnectedFirstTime
+            assertEquals("Alex's Rock account", connected.profile.accountDisplayName)
             assertEquals("Alex's Rock account", store.profile?.accountDisplayName)
+            viewModel.openDevices()
+            assertTrue(viewModel.state.value is AccountUiState.Connected)
         } finally {
             Dispatchers.resetMain()
         }
@@ -260,8 +273,7 @@ class AccountSessionTest {
             val viewModel = AccountViewModel(gateway, MemoryStore(), dispatcher, { testScheduler.currentTime }, 1_000, 100)
             viewModel.connect("RockMobile — Pixel 9")
             runCurrent()
-            val connected = viewModel.state.value as AccountUiState.Connected
-            assertEquals("Этот телефон подключён к Alex's Rock account", connected.message)
+            val connected = viewModel.state.value as AccountUiState.ConnectedFirstTime
             assertFalse(connected.devicesAvailable)
         } finally {
             Dispatchers.resetMain()

@@ -23,18 +23,26 @@ internal fun shouldContinuePairing(error: Throwable, nowMs: Long, deadlineMs: Lo
     error is ApiError && error.code == "pairing_pending" && nowMs < deadlineMs
 
 internal fun pairingErrorMessage(error: Throwable, deadlineReached: Boolean = false): String = when {
-    deadlineReached -> "Срок действия подключения истёк. Начните подключение заново."
-    error is ApiError && error.code == "pairing_rejected" -> "Запрос подключения отклонён. Создайте новый."
-    error is ApiError && error.code == "pairing_expired" -> "Срок действия подключения истёк. Начните подключение заново."
-    error is ApiError && error.code == "device_limit_reached" -> "Достигнут лимит устройств аккаунта. Отключите старое устройство и попробуйте снова."
-    error is ApiError && error.code == "client_upgrade_required" -> "Обновите RockMobile, чтобы продолжить подключение."
-    error is ApiError && error.code == "pairing_unavailable" -> "RockServer сейчас недоступен. Радио продолжает работать без сервера."
+    deadlineReached -> "Ссылка истекла"
+    error is ApiError && error.code == "pairing_rejected" -> "Подключение не подтверждено"
+    error is ApiError && error.code == "pairing_expired" -> "Ссылка истекла"
+    error is ApiError && error.code == "device_limit_reached" -> "Достигнут лимит устройств"
+    error is ApiError && error.code == "client_upgrade_required" -> "Обновите RockMobile"
+    error is ApiError && error.code == "pairing_unavailable" -> "RockServer временно недоступен"
     error is ApiError && error.statusCode == 409 -> "Достигнут лимит устройств аккаунта. Отключите старое устройство и попробуйте снова."
     error is ApiError && error.statusCode == 410 -> "Запрос подключения больше недоступен. Создайте новый."
-    error is ApiError && error.statusCode >= 500 -> "RockServer сейчас недоступен. Радио продолжает работать без сервера."
+    error is ApiError && error.statusCode >= 500 -> "RockServer временно недоступен"
     error is ApiError -> "Не удалось подключить телефон. Проверьте ссылку и попробуйте снова."
-    error is IOException -> "RockServer сейчас недоступен. Радио продолжает работать без сервера."
+    error is IOException -> "RockServer временно недоступен"
     else -> "Не удалось подключить телефон. Проверьте ссылку и попробуйте снова."
+}
+
+internal fun pairingErrorAction(error: Throwable, deadlineReached: Boolean = false): AccountErrorAction = when {
+    deadlineReached || error is ApiError && (error.code == "pairing_expired" || error.statusCode == 410) -> AccountErrorAction.NewLink
+    error is ApiError && error.code == "pairing_rejected" -> AccountErrorAction.Restart
+    error is ApiError && error.code == "device_limit_reached" || error is ApiError && error.statusCode == 409 -> AccountErrorAction.OpenDevices
+    error is ApiError && error.code == "client_upgrade_required" -> AccountErrorAction.UpdateApp
+    else -> AccountErrorAction.Retry
 }
 
 class AccountViewModel(
@@ -77,18 +85,20 @@ class AccountViewModel(
                 // A local cancel leaves anonymous radio and any saved account untouched.
             } catch (error: Exception) {
                 pendingPairing = null
-                _state.value = AccountUiState.Error(pairingErrorMessage(error))
+                _state.value = AccountUiState.Error(pairingErrorMessage(error), pairingErrorAction(error))
             }
         }
     }
 
     /** Re-attaches polling after the browser/activity returns to the foreground. */
-    fun resumePairing() {
+    fun resumePairing(fromBrowser: Boolean = false) {
         val pending = pendingPairing ?: return
         if (nowMs() >= pending.deadlineMs) {
             pendingPairing = null
             pairingJob?.cancel()
-            _state.value = AccountUiState.Error("Срок действия подключения истёк. Начните подключение заново.")
+            _state.value = AccountUiState.Error("Ссылка истекла", AccountErrorAction.NewLink)
+        } else if (fromBrowser && _state.value is AccountUiState.Pairing) {
+            _state.value = (_state.value as AccountUiState.Pairing).copy(returningFromBrowser = true)
         } else if (pairingJob?.isActive != true) {
             pairingJob = viewModelScope.launch {
                 try { awaitPairing(pending) } catch (_: CancellationException) { }
@@ -196,10 +206,9 @@ class AccountViewModel(
                 pendingPairing = null
                 loadAccount(result.first)
                 val connected = state.value as? AccountUiState.Connected
-                _state.value = AccountUiState.Connected(
+                _state.value = AccountUiState.ConnectedFirstTime(
                     result.first,
                     connected?.devices.orEmpty(),
-                    "Этот телефон подключён к ${result.first.accountDisplayName}",
                     connected?.devicesAvailable ?: true,
                 )
                 return
@@ -207,14 +216,26 @@ class AccountViewModel(
                 val now = nowMs()
                 if (!shouldContinuePairing(error, now, pending.deadlineMs)) {
                     pendingPairing = null
-                    _state.value = AccountUiState.Error(pairingErrorMessage(error, now >= pending.deadlineMs))
+                    _state.value = AccountUiState.Error(
+                        pairingErrorMessage(error, now >= pending.deadlineMs),
+                        pairingErrorAction(error, now >= pending.deadlineMs),
+                    )
                     return
                 }
             }
             delay(min(pairingPollMs, (pending.deadlineMs - nowMs()).coerceAtLeast(1)))
         }
         pendingPairing = null
-        _state.value = AccountUiState.Error("Срок действия подключения истёк. Начните подключение заново.")
+        _state.value = AccountUiState.Error("Ссылка истекла", AccountErrorAction.NewLink)
+    }
+
+    fun openDevices() {
+        val firstTime = _state.value as? AccountUiState.ConnectedFirstTime ?: return
+        _state.value = AccountUiState.Connected(
+            firstTime.profile,
+            firstTime.devices.sortedByDescending { it.deviceId == firstTime.profile.deviceId },
+            devicesAvailable = firstTime.devicesAvailable,
+        )
     }
 
     override fun onCleared() { pairingJob?.cancel() }

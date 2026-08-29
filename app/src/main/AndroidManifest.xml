@@ -10,6 +10,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="alex.vault57.ru" android:path="/return/rockmobile" />
+            </intent-filter>
         </activity>
         <service android:name=".playback.RockmobileMediaSessionService" android:foregroundServiceType="mediaPlayback" android:exported="true">
             <intent-filter>

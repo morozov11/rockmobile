@@ -71,12 +71,24 @@ data class AccountDevice(
 sealed interface AccountUiState {
     data object Disconnected : AccountUiState
     data object Starting : AccountUiState
-    data class Pairing(val request: PairingRequest) : AccountUiState
+    data class Pairing(val request: PairingRequest, val returningFromBrowser: Boolean = false) : AccountUiState
+    data class ConnectedFirstTime(
+        val profile: AccountProfile,
+        val devices: List<AccountDevice>,
+        val devicesAvailable: Boolean,
+    ) : AccountUiState
     data class Connected(
         val profile: AccountProfile,
         val devices: List<AccountDevice>,
         val message: String? = null,
         val devicesAvailable: Boolean = true,
     ) : AccountUiState
-    data class Error(val message: String, val canRetryConnection: Boolean = true) : AccountUiState
+    data class Error(
+        val message: String,
+        val action: AccountErrorAction = AccountErrorAction.Retry,
+    ) : AccountUiState
+}
+
+enum class AccountErrorAction {
+    Retry, NewLink, Restart, OpenDevices, UpdateApp, None,
 }
