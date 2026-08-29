@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,13 +66,12 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val close = {
-        if (state is AccountUiState.Starting || state is AccountUiState.Pairing) viewModel.cancelPairing()
-        dismiss()
-    }
+    LaunchedEffect(Unit) { viewModel.ensureSessionVisible() }
+
+    val dismissDialog = { dismiss() }
 
     AlertDialog(
-        onDismissRequest = close,
+        onDismissRequest = dismissDialog,
         title = { Text(dialogTitle(state)) },
         text = {
             Column(
@@ -152,7 +152,10 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                         Text("RockMobile подключён", style = MaterialTheme.typography.headlineSmall)
                         Text("Аккаунт: ${state.profile.accountDisplayName}")
                         Text("Это устройство: ${presentDeviceDisplayName(state.profile.deviceType, state.profile.deviceDisplayName)}")
-                        Button(onClick = dismiss, modifier = Modifier.fillMaxWidth()) { Text("Готово") }
+                        Button(onClick = {
+                            viewModel.acknowledgeFirstTimeConnection()
+                            dismissDialog()
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Готово") }
                         OutlinedButton(onClick = viewModel::openDevices, modifier = Modifier.fillMaxWidth()) { Text("Открыть устройства") }
                     }
 
@@ -165,7 +168,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                         }
                         Text("Аккаунт: ${state.profile.accountDisplayName}")
                         Text("Этот телефон: ${presentDeviceDisplayName(state.profile.deviceType, state.profile.deviceDisplayName)}")
-                        Text("Лимит аккаунта: до 10 устройств")
+                        Text("Лимит аккаунта: до 50 устройств")
                         if (!state.devicesAvailable) {
                             Text("Список устройств временно недоступен. Подключение телефона уже не заблокировано; попробуйте обновить позже.")
                         } else if (state.devices.isEmpty()) {
@@ -206,7 +209,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                 Text(visibleBuild(), style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = { TextButton(onClick = close) { Text("Закрыть") } },
+        confirmButton = { TextButton(onClick = dismissDialog) { Text("Закрыть") } },
     )
 
     deviceToRevoke?.let { device ->

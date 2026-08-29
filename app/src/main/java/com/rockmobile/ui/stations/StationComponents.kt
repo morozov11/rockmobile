@@ -119,7 +119,7 @@ internal fun VoiceStatusBar(state: VoiceUiState, cancel: () -> Unit, dismiss: ()
 }
 
 @Composable
-internal fun RockHeader(retry: () -> Unit, openAccount: () -> Unit) {
+internal fun RockHeader(retry: () -> Unit, openAccount: () -> Unit, accountConnected: Boolean = false) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(painter = painterResource(R.mipmap.rockmobile_icon), contentDescription = rockMobileLogoDescription(), modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.small))
@@ -127,7 +127,13 @@ internal fun RockHeader(retry: () -> Unit, openAccount: () -> Unit) {
             Text(rockMobileTitle(), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
         Row {
-            IconButton(onClick = openAccount) { Icon(Icons.Default.Person, "Account and devices", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            IconButton(onClick = openAccount) {
+                Icon(
+                    Icons.Default.Person,
+                    if (accountConnected) "Rock-аккаунт подключён" else "Подключить Rock-аккаунт",
+                    tint = if (accountConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             IconButton(onClick = retry) { Icon(Icons.Default.Refresh, "Refresh catalogue", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }

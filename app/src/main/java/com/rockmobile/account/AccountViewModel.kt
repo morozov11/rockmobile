@@ -22,6 +22,12 @@ private const val DEFAULT_PAIRING_POLL_MS = 2_000L
 internal fun shouldContinuePairing(error: Throwable, nowMs: Long, deadlineMs: Long): Boolean =
     error is ApiError && error.code == "pairing_pending" && nowMs < deadlineMs
 
+internal fun shouldRetryPairingPoll(error: Throwable, nowMs: Long, deadlineMs: Long): Boolean =
+    nowMs < deadlineMs && (
+        shouldContinuePairing(error, nowMs, deadlineMs) ||
+            error is IOException && error !is ApiError
+    )
+
 internal fun pairingErrorMessage(error: Throwable, deadlineReached: Boolean = false): String = when {
     deadlineReached -> "Ссылка истекла"
     error is ApiError && error.code == "pairing_rejected" -> "Подключение не подтверждено"
@@ -61,7 +67,10 @@ class AccountViewModel(
     private var pendingPairing: PendingPairing? = null
 
     init {
-        refreshAccount()
+        viewModelScope.launch {
+            restorePendingPairing()
+            refreshAccountInternal()
+        }
     }
 
     fun connect(deviceName: String) {
@@ -76,15 +85,18 @@ class AccountViewModel(
         _state.value = AccountUiState.Starting
         pairingJob = viewModelScope.launch {
             try {
+                withContext(ioDispatcher) { store.clearPendingPairing() }
                 val request = withContext(ioDispatcher) { gateway.createPairing(normalizedName) }
                 val deadline = min(nowMs() + pairingTimeoutMs, request.expiresAtMs() ?: Long.MAX_VALUE)
                 pendingPairing = PendingPairing(request, deadline)
+                withContext(ioDispatcher) { store.savePendingPairing(request.persistSnapshot(deadline)) }
                 _state.value = AccountUiState.Pairing(request)
                 awaitPairing(pendingPairing!!)
             } catch (_: CancellationException) {
                 // A local cancel leaves anonymous radio and any saved account untouched.
             } catch (error: Exception) {
                 pendingPairing = null
+                withContext(ioDispatcher) { store.clearPendingPairing() }
                 _state.value = AccountUiState.Error(pairingErrorMessage(error), pairingErrorAction(error))
             }
         }
@@ -92,16 +104,23 @@ class AccountViewModel(
 
     /** Re-attaches polling after the browser/activity returns to the foreground. */
     fun resumePairing(fromBrowser: Boolean = false) {
-        val pending = pendingPairing ?: return
-        if (nowMs() >= pending.deadlineMs) {
-            pendingPairing = null
-            pairingJob?.cancel()
-            _state.value = AccountUiState.Error("Ссылка истекла", AccountErrorAction.NewLink)
-        } else if (fromBrowser && _state.value is AccountUiState.Pairing) {
-            _state.value = (_state.value as AccountUiState.Pairing).copy(returningFromBrowser = true)
-        } else if (pairingJob?.isActive != true) {
-            pairingJob = viewModelScope.launch {
-                try { awaitPairing(pending) } catch (_: CancellationException) { }
+        viewModelScope.launch {
+            if (pendingPairing == null) restorePendingPairing()
+            val pending = pendingPairing ?: run {
+                if (fromBrowser) PairingLog.returnWithoutPending()
+                return@launch
+            }
+            if (nowMs() >= pending.deadlineMs) {
+                pendingPairing = null
+                pairingJob?.cancel()
+                clearPendingPairingStorage()
+                _state.value = AccountUiState.Error("Ссылка истекла", AccountErrorAction.NewLink)
+            } else if (fromBrowser && _state.value is AccountUiState.Pairing) {
+                _state.value = (_state.value as AccountUiState.Pairing).copy(returningFromBrowser = true)
+            } else if (pairingJob?.isActive != true) {
+                pairingJob = viewModelScope.launch {
+                    try { awaitPairing(pending) } catch (_: CancellationException) { }
+                }
             }
         }
     }
@@ -110,13 +129,36 @@ class AccountViewModel(
         pendingPairing = null
         pairingJob?.cancel()
         pairingJob = null
+        viewModelScope.launch { withContext(ioDispatcher) { store.clearPendingPairing() } }
         _state.value = AccountUiState.Disconnected
     }
 
-    fun refreshAccount() = viewModelScope.launch {
+    /** Shows a saved native session in the UI when pairing finished while the dialog was closed. */
+    fun ensureSessionVisible() {
+        if (accountSessionActive(_state.value)) return
+        viewModelScope.launch {
+            val profile = withContext(ioDispatcher) { store.loadProfile() }
+            val credentials = withContext(ioDispatcher) { store.load() }
+            if (credentials == null || profile == null) return@launch
+            loadAccount(profile)
+        }
+    }
+
+    fun acknowledgeFirstTimeConnection() {
+        val firstTime = _state.value as? AccountUiState.ConnectedFirstTime ?: return
+        _state.value = AccountUiState.Connected(
+            firstTime.profile,
+            firstTime.devices.sortedByDescending { it.deviceId == firstTime.profile.deviceId },
+            devicesAvailable = firstTime.devicesAvailable,
+        )
+    }
+
+    fun refreshAccount() = viewModelScope.launch { refreshAccountInternal() }
+
+    private suspend fun refreshAccountInternal() {
         val localProfile = withContext(ioDispatcher) { store.loadProfile() }
         try {
-            val credentials = withContext(ioDispatcher) { store.load() } ?: return@launch
+            val credentials = withContext(ioDispatcher) { store.load() } ?: return
             val fresh = withContext(ioDispatcher) { gateway.refresh(credentials.refreshToken) }
             withContext(ioDispatcher) { store.save(fresh) }
             loadAccount()
@@ -202,6 +244,7 @@ class AccountViewModel(
                 withContext(ioDispatcher) {
                     store.save(result.second)
                     store.saveProfile(result.first)
+                    store.clearPendingPairing()
                 }
                 pendingPairing = null
                 loadAccount(result.first)
@@ -214,20 +257,50 @@ class AccountViewModel(
                 return
             } catch (error: Exception) {
                 val now = nowMs()
-                if (!shouldContinuePairing(error, now, pending.deadlineMs)) {
+                if (!shouldRetryPairingPoll(error, now, pending.deadlineMs)) {
                     pendingPairing = null
+                    clearPendingPairingStorage()
+                    PairingLog.pollFailed(error)
                     _state.value = AccountUiState.Error(
                         pairingErrorMessage(error, now >= pending.deadlineMs),
                         pairingErrorAction(error, now >= pending.deadlineMs),
                     )
                     return
                 }
+                PairingLog.pollRetry(error)
             }
             delay(min(pairingPollMs, (pending.deadlineMs - nowMs()).coerceAtLeast(1)))
         }
         pendingPairing = null
+        clearPendingPairingStorage()
         _state.value = AccountUiState.Error("Ссылка истекла", AccountErrorAction.NewLink)
     }
+
+    private suspend fun restorePendingPairing() {
+        if (withContext(ioDispatcher) { store.load() } != null) {
+            clearPendingPairingStorage()
+            return
+        }
+        val snapshot = withContext(ioDispatcher) { store.loadPendingPairing() } ?: return
+        if (nowMs() >= snapshot.deadlineMs) {
+            clearPendingPairingStorage()
+            return
+        }
+        val request = snapshot.toPairingRequest()
+        val pending = PendingPairing(request, snapshot.deadlineMs)
+        pendingPairing = pending
+        if (!accountSessionActive(_state.value)) {
+            _state.value = AccountUiState.Pairing(request)
+        }
+        PairingLog.restored(request.requestId)
+        if (pairingJob?.isActive != true) {
+            pairingJob = viewModelScope.launch {
+                try { awaitPairing(pending) } catch (_: CancellationException) { }
+            }
+        }
+    }
+
+    private suspend fun clearPendingPairingStorage() = withContext(ioDispatcher) { store.clearPendingPairing() }
 
     fun openDevices() {
         val firstTime = _state.value as? AccountUiState.ConnectedFirstTime ?: return
@@ -240,3 +313,6 @@ class AccountViewModel(
 
     override fun onCleared() { pairingJob?.cancel() }
 }
+
+internal fun accountSessionActive(state: AccountUiState): Boolean =
+    state is AccountUiState.Connected || state is AccountUiState.ConnectedFirstTime

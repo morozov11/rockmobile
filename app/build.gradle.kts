@@ -14,8 +14,8 @@ android {
         applicationId = "com.rockmobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.1.5"
+        versionCode = 7
+        versionName = "0.1.6"
         buildConfigField("String", "BUILD_REVISION", "\"${providers.exec { commandLine("git", "rev-parse", "--short=7", "HEAD") }.standardOutput.asText.get().trim()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -41,6 +41,10 @@ android {
 
     buildFeatures { compose = true; buildConfig = true }
     buildTypes {
+        debug {
+            // Same cert as release so Digital Asset Links / passkeys match assetlinks.json.
+            signingConfig = signingConfigs.getByName("release")
+        }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")

@@ -36,6 +36,7 @@ fun StationsScreen(
     personal: PersonalData,
     toggleFavourite: (Station) -> Unit,
     openAccount: () -> Unit,
+    accountConnected: Boolean = false,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(
@@ -45,7 +46,7 @@ fun StationsScreen(
                 .imePadding()
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            RockHeader(retry, openAccount)
+            RockHeader(retry, openAccount, accountConnected)
             Spacer(Modifier.height(6.dp))
             when (state) {
                 StationsUiState.Loading -> LoadingState()

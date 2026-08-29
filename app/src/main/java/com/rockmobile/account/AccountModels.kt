@@ -24,7 +24,7 @@ internal fun validateDeviceDisplayName(value: String): String? {
     }
 }
 
-/** Pairing proofs are deliberately memory-only. Do not make this Parcelable or save it in state. */
+/** Pairing proofs stay out of Compose state; they may be restored from encrypted storage after process death. */
 class PairingRequest(
     val requestId: String,
     private val desktopToken: String,
@@ -42,6 +42,44 @@ class PairingRequest(
     internal fun expiresAtMs(): Long? = expiresAt.takeIf(String::isNotBlank)?.let {
         runCatching { Instant.parse(it).toEpochMilli() }.getOrNull()
     }
+    internal fun persistSnapshot(deadlineMs: Long): PendingPairingSnapshot = PendingPairingSnapshot(
+        requestId = requestId,
+        desktopToken = desktopToken,
+        approvalSecret = approvalSecret,
+        shortCode = shortCode,
+        verificationPhrase = verificationPhrase,
+        deviceDisplayName = deviceDisplayName,
+        deviceType = deviceType,
+        expiresAt = expiresAt,
+        status = status,
+        deadlineMs = deadlineMs,
+    )
+}
+
+/** Encrypted snapshot used to resume pairing after a process restart or App Link cold start. */
+data class PendingPairingSnapshot(
+    val requestId: String,
+    val desktopToken: String,
+    val approvalSecret: String,
+    val shortCode: String,
+    val verificationPhrase: String,
+    val deviceDisplayName: String,
+    val deviceType: String,
+    val expiresAt: String,
+    val status: String,
+    val deadlineMs: Long,
+) {
+    fun toPairingRequest(): PairingRequest = PairingRequest(
+        requestId = requestId,
+        desktopToken = desktopToken,
+        approvalSecret = approvalSecret,
+        shortCode = shortCode,
+        verificationPhrase = verificationPhrase,
+        deviceDisplayName = deviceDisplayName,
+        deviceType = deviceType,
+        expiresAt = expiresAt,
+        status = status,
+    )
 }
 
 class NativeCredentials(val accessToken: String, val refreshToken: String) {

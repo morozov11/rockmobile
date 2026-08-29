@@ -62,7 +62,7 @@ class AccountSessionTest {
         assertEquals("Радио и сохранённые станции работают без аккаунта.", disconnectedSecondaryCopy())
         assertEquals("RockMobile", rockMobileTitle())
         assertEquals("RockMobile logo", rockMobileLogoDescription())
-        assertTrue(visibleBuild().matches(Regex("0\\.1\\.5 \\([0-9a-f]{7}\\)")))
+        assertTrue(visibleBuild().matches(Regex("0\\.1\\.6 \\([0-9a-f]{7}\\)")))
     }
 
     @Test fun pairingCompletion_sendsOnlyDesktopProof_neverUserId() {
@@ -162,6 +162,35 @@ class AccountSessionTest {
         assertEquals(null, ApiError.from(HttpResponse(410, "{}")).requestId)
     }
 
+    @Test fun pairingPoll_retriesTransientNetworkErrors_beforeDeadline() {
+        assertTrue(shouldRetryPairingPoll(IOException("offline"), nowMs = 100, deadlineMs = 101))
+        assertFalse(shouldRetryPairingPoll(IOException("offline"), nowMs = 101, deadlineMs = 101))
+        assertFalse(shouldRetryPairingPoll(ApiError(503, "pairing_unavailable"), nowMs = 100, deadlineMs = 101))
+        assertTrue(shouldRetryPairingPoll(ApiError(202, "pairing_pending"), nowMs = 100, deadlineMs = 101))
+    }
+
+    @Test fun viewModel_networkBlipDuringPairingRetriesUntilApproval() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val gateway = FakeGateway().apply { completionError = IOException("offline") }
+            val viewModel = AccountViewModel(gateway, MemoryStore(), dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            viewModel.connect("RockMobile — Pixel 9")
+            runCurrent()
+            assertTrue(viewModel.state.value is AccountUiState.Pairing)
+            advanceTimeBy(100)
+            runCurrent()
+            assertTrue(viewModel.state.value is AccountUiState.Pairing)
+            gateway.approved = true
+            gateway.completionError = null
+            advanceTimeBy(100)
+            runCurrent()
+            assertTrue(viewModel.state.value is AccountUiState.ConnectedFirstTime)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test fun pairingErrors_preferCanonicalCode_thenUseNarrowStatusFallbacks() {
         assertEquals("Подключение не подтверждено", pairingErrorMessage(ApiError(404, "pairing_rejected")))
         assertEquals("Ссылка истекла", pairingErrorMessage(ApiError(404, "pairing_expired")))
@@ -170,32 +199,6 @@ class AccountSessionTest {
         assertTrue(pairingErrorMessage(ApiError(404, "unknown")).contains("Не удалось"))
         assertTrue(pairingErrorMessage(ApiError(409)).contains("лимит"))
         assertTrue(pairingErrorMessage(ApiError(410)).contains("недоступен"))
-    }
-
-    @Test fun viewModel_pairingWaitsResumesAndCompletesWithAccountName() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        try {
-            val gateway = FakeGateway()
-            val store = MemoryStore()
-            val viewModel = AccountViewModel(gateway, store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
-            viewModel.connect("RockMobile — Pixel 9")
-            runCurrent()
-            assertTrue(viewModel.state.value is AccountUiState.Pairing)
-
-            gateway.approved = true
-            viewModel.resumePairing()
-            advanceTimeBy(100)
-            runCurrent()
-
-            val connected = viewModel.state.value as AccountUiState.ConnectedFirstTime
-            assertEquals("Alex's Rock account", connected.profile.accountDisplayName)
-            assertEquals("Alex's Rock account", store.profile?.accountDisplayName)
-            viewModel.openDevices()
-            assertTrue(viewModel.state.value is AccountUiState.Connected)
-        } finally {
-            Dispatchers.resetMain()
-        }
     }
 
     @Test fun viewModel_startingBlocksDuplicateCreateAndThenWaits() = runTest {
@@ -217,6 +220,53 @@ class AccountSessionTest {
         }
     }
 
+    @Test fun viewModel_pairingWaitsResumesAndCompletesWithAccountName() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val gateway = FakeGateway()
+            val store = MemoryStore()
+            val viewModel = AccountViewModel(gateway, store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            viewModel.connect("RockMobile — Pixel 9")
+            runCurrent()
+            assertTrue(viewModel.state.value is AccountUiState.Pairing)
+
+            gateway.approved = true
+            viewModel.resumePairing()
+            advanceTimeBy(100)
+            runCurrent()
+
+            val connected = viewModel.state.value as AccountUiState.ConnectedFirstTime
+            assertEquals("Alex's Rock account", connected.profile.accountDisplayName)
+            assertEquals("Alex's Rock account", store.profile?.accountDisplayName)
+            assertEquals(null, store.pendingPairing)
+            viewModel.openDevices()
+            assertTrue(viewModel.state.value is AccountUiState.Connected)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun viewModel_restorePendingPairingFromEncryptedStore() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val gateway = FakeGateway()
+            val store = MemoryStore()
+            val request = PairingRequest("request", "d".repeat(16), "secret", "AB12CD34", "AMBER-DAWN", "Pixel 9")
+            store.pendingPairing = request.persistSnapshot(10_000)
+            val viewModel = AccountViewModel(gateway, store, dispatcher, { testScheduler.currentTime }, 10_000, 100)
+            runCurrent()
+            assertTrue(viewModel.state.value is AccountUiState.Pairing)
+            gateway.approved = true
+            advanceUntilIdle()
+            assertTrue(viewModel.state.value is AccountUiState.ConnectedFirstTime)
+            assertEquals(null, store.pendingPairing)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test fun viewModel_cancelStopsPairingWithoutSavingCredentials() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -230,6 +280,7 @@ class AccountSessionTest {
             runCurrent()
             assertEquals(AccountUiState.Disconnected, viewModel.state.value)
             assertEquals(null, store.credentials)
+            assertEquals(null, store.pendingPairing)
         } finally {
             Dispatchers.resetMain()
         }
@@ -246,6 +297,7 @@ class AccountSessionTest {
             advanceUntilIdle()
             assertEquals("Ссылка истекла", (viewModel.state.value as AccountUiState.Error).message)
             assertEquals(null, store.credentials)
+            assertEquals(null, store.pendingPairing)
         } finally {
             Dispatchers.resetMain()
         }
@@ -310,6 +362,48 @@ class AccountSessionTest {
         }
     }
 
+    @Test fun viewModel_ensureSessionVisibleRestoresConnectedFromStore() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val profile = AccountProfile(
+                userId = "owner",
+                sessionId = "session",
+                deviceId = "device",
+                accountDisplayName = "Alex's Rock account",
+                deviceDisplayName = "RockMobile — Pixel 9",
+                deviceType = "rockmobile_android",
+            )
+            val store = MemoryStore().apply {
+                credentials = NativeCredentials("o".repeat(16), "r".repeat(16))
+                this.profile = profile
+            }
+            val viewModel = AccountViewModel(FakeGateway().apply { approved = true }, store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            assertEquals(AccountUiState.Disconnected, viewModel.state.value)
+            viewModel.ensureSessionVisible()
+            runCurrent()
+            assertTrue(viewModel.state.value is AccountUiState.Connected)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun viewModel_acknowledgeFirstTimeConnectionOpensAccountScreen() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val gateway = FakeGateway().apply { approved = true }
+            val viewModel = AccountViewModel(gateway, MemoryStore(), dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            viewModel.connect("RockMobile — Pixel 9")
+            runCurrent()
+            assertTrue(viewModel.state.value is AccountUiState.ConnectedFirstTime)
+            viewModel.acknowledgeFirstTimeConnection()
+            assertTrue(viewModel.state.value is AccountUiState.Connected)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     private class ScriptedTransport(
         var post: HttpResponse,
         var get: HttpResponse = HttpResponse(404, "{}"),
@@ -332,11 +426,19 @@ class AccountSessionTest {
     private class MemoryStore : CredentialStore {
         var credentials: NativeCredentials? = null
         var profile: AccountProfile? = null
+        var pendingPairing: PendingPairingSnapshot? = null
         override fun load() = credentials
         override fun save(credentials: NativeCredentials) { this.credentials = credentials }
         override fun loadProfile() = profile
         override fun saveProfile(profile: AccountProfile) { this.profile = profile }
-        override fun clear() { credentials = null; profile = null }
+        override fun loadPendingPairing() = pendingPairing
+        override fun savePendingPairing(snapshot: PendingPairingSnapshot) { pendingPairing = snapshot }
+        override fun clearPendingPairing() { pendingPairing = null }
+        override fun clear() {
+            credentials = null
+            profile = null
+            pendingPairing = null
+        }
     }
 
     private class FakeGateway : AccountGateway {

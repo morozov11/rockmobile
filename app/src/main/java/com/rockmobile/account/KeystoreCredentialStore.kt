@@ -15,12 +15,16 @@ interface CredentialStore {
     fun save(credentials: NativeCredentials)
     fun loadProfile(): AccountProfile? = null
     fun saveProfile(profile: AccountProfile) = Unit
+    fun loadPendingPairing(): PendingPairingSnapshot? = null
+    fun savePendingPairing(snapshot: PendingPairingSnapshot) = Unit
+    fun clearPendingPairing() = Unit
     fun clear()
 }
 
 /** Encrypted private file; the AES key is non-exportable and held in Android Keystore. */
 class KeystoreCredentialStore(context: Context) : CredentialStore {
     private val file = File(context.noBackupFilesDir, "native_session.bin")
+    private val pairingFile = File(context.noBackupFilesDir, "pending_pairing.bin")
 
     override fun load(): NativeCredentials? = try {
         readJson()?.let { NativeCredentials(it.getString("access_token"), it.getString("refresh_token")) }
@@ -42,9 +46,29 @@ class KeystoreCredentialStore(context: Context) : CredentialStore {
 
     override fun saveProfile(profile: AccountProfile) = updateJson { put("profile", profileJson(profile)) }
 
-    override fun clear() { file.delete() }
+    override fun loadPendingPairing(): PendingPairingSnapshot? = try {
+        readPairingJson()?.let(::pendingPairingSnapshot)
+    } catch (_: Exception) {
+        clearPendingPairing()
+        null
+    }
+
+    override fun savePendingPairing(snapshot: PendingPairingSnapshot) {
+        pairingFile.parentFile?.mkdirs()
+        pairingFile.writeBytes(encrypt(pendingPairingJson(snapshot).toString().toByteArray()))
+    }
+
+    override fun clearPendingPairing() { pairingFile.delete() }
+
+    override fun clear() {
+        file.delete()
+        pairingFile.delete()
+    }
 
     private fun readJson(): JSONObject? = if (!file.exists()) null else JSONObject(decrypt(file.readBytes()).toString(Charsets.UTF_8))
+
+    private fun readPairingJson(): JSONObject? =
+        if (!pairingFile.exists()) null else JSONObject(decrypt(pairingFile.readBytes()).toString(Charsets.UTF_8))
 
     private fun updateJson(update: JSONObject.() -> Unit) {
         val body = readJson() ?: JSONObject()
@@ -75,6 +99,32 @@ class KeystoreCredentialStore(context: Context) : CredentialStore {
         createdAt = body.optString("created_at").takeIf(String::isNotBlank),
         deviceCreatedAt = body.optString("device_created_at").takeIf(String::isNotBlank),
         lastSeenAt = body.optString("last_seen_at").takeIf(String::isNotBlank),
+    )
+
+    private fun pendingPairingJson(snapshot: PendingPairingSnapshot) = JSONObject().apply {
+        put("request_id", snapshot.requestId)
+        put("desktop_token", snapshot.desktopToken)
+        put("approval_secret", snapshot.approvalSecret)
+        put("short_code", snapshot.shortCode)
+        put("verification_phrase", snapshot.verificationPhrase)
+        put("device_display_name", snapshot.deviceDisplayName)
+        put("device_type", snapshot.deviceType)
+        put("expires_at", snapshot.expiresAt)
+        put("status", snapshot.status)
+        put("deadline_ms", snapshot.deadlineMs)
+    }
+
+    private fun pendingPairingSnapshot(body: JSONObject) = PendingPairingSnapshot(
+        requestId = body.getString("request_id"),
+        desktopToken = body.getString("desktop_token"),
+        approvalSecret = body.getString("approval_secret"),
+        shortCode = body.getString("short_code"),
+        verificationPhrase = body.getString("verification_phrase"),
+        deviceDisplayName = body.getString("device_display_name"),
+        deviceType = body.getString("device_type"),
+        expiresAt = body.optString("expires_at"),
+        status = body.optString("status"),
+        deadlineMs = body.getLong("deadline_ms"),
     )
 
     private fun key() = (KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.getKey(KEY_ALIAS, null)

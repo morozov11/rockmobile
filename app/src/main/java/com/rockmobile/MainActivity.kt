@@ -39,6 +39,7 @@ import com.rockmobile.account.AccountDialog
 import com.rockmobile.account.AccountViewModel
 import com.rockmobile.account.KeystoreCredentialStore
 import com.rockmobile.account.RockserverAccountGateway
+import com.rockmobile.account.accountSessionActive
 
 class MainActivity : ComponentActivity() {
     private var accountViewModel: AccountViewModel? = null
@@ -59,7 +60,10 @@ class MainActivity : ComponentActivity() {
             RockmobileTheme {
             val model: StationsViewModel = viewModel(factory = StationsViewModelFactory(repository, unavailableVoiceStations::unavailableStationIds))
             val account = viewModel<AccountViewModel>(factory = AccountViewModelFactory(RockserverAccountGateway(RockserverApi(), settings::rockserverUrl), KeystoreCredentialStore(applicationContext))).also { accountViewModel = it }
+            val accountState = account.state.collectAsStateWithLifecycle().value
+            val accountConnected = accountSessionActive(accountState)
             androidx.compose.runtime.LaunchedEffect(account) {
+                account.ensureSessionVisible()
                 if (isRockmobileReturnIntent(intent)) account.resumePairing(fromBrowser = true)
             }
             val state = model.state.collectAsStateWithLifecycle().value
@@ -91,7 +95,7 @@ class MainActivity : ComponentActivity() {
                     if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) voice.start()
                     else { voice.requestPermission(); microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
                 }, onFinishVoice = voice::finishRecording, onCancelVoice = voice::cancel, onDismissVoice = voice::dismiss,
-                openPlayer = { playerScreen = true }, personal = personal, toggleFavourite = { station -> personalData.toggleFavourite(station) }, openAccount = { accountOpen = true },
+                openPlayer = { playerScreen = true }, personal = personal, toggleFavourite = { station -> personalData.toggleFavourite(station) }, openAccount = { account.ensureSessionVisible(); accountOpen = true }, accountConnected = accountConnected,
             )
             if (accountOpen) AccountDialog(account, settings.rockserverUrl()) { accountOpen = false }
             }
