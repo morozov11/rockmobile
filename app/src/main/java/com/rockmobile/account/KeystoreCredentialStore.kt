@@ -24,24 +24,43 @@ interface CredentialStore {
 /** Encrypted private file; the AES key is non-exportable and held in Android Keystore. */
 class KeystoreCredentialStore(context: Context) : CredentialStore {
     private val file = File(context.noBackupFilesDir, "native_session.bin")
+    private val recoveryFile = File(context.noBackupFilesDir, "native_session.recovery.bin")
     private val pairingFile = File(context.noBackupFilesDir, "pending_pairing.bin")
 
-    override fun load(): NativeCredentials? = try {
-        readJson()?.let { NativeCredentials(it.getString("access_token"), it.getString("refresh_token")) }
-    } catch (_: Exception) {
-        clear()
-        null
+    override fun load(): NativeCredentials? {
+        val fromMain = readCredentials(file)
+        if (fromMain != null) return fromMain
+        val fromRecovery = readCredentials(recoveryFile)
+        if (fromRecovery != null) {
+            SessionLog.probeOffline("promoting recovered native session credentials")
+            runCatching { save(fromRecovery) }
+            return fromRecovery
+        }
+        return null
     }
 
     override fun loadProfile(): AccountProfile? = try {
-        readJson()?.optJSONObject("profile")?.let(::profile)
+        readJson(file)?.optJSONObject("profile")?.let(::profile)
     } catch (_: Exception) {
-        clear()
         null
     }
 
-    override fun save(credentials: NativeCredentials) = updateJson {
-        put("access_token", credentials.accessToken).put("refresh_token", credentials.refreshToken)
+    override fun save(credentials: NativeCredentials) {
+        val recoveryBody = JSONObject().apply {
+            put("access_token", credentials.accessToken)
+            put("refresh_token", credentials.refreshToken)
+        }
+        writeEncrypted(recoveryFile, recoveryBody)
+        updateJson {
+            put("access_token", credentials.accessToken).put("refresh_token", credentials.refreshToken)
+        }
+        recoveryFile.delete()
+        val persisted = readCredentials(file)
+        if (persisted?.accessToken != credentials.accessToken ||
+            persisted.refreshToken != credentials.refreshToken
+        ) {
+            error("Failed to persist native session credentials")
+        }
     }
 
     override fun saveProfile(profile: AccountProfile) = updateJson { put("profile", profileJson(profile)) }
@@ -62,19 +81,47 @@ class KeystoreCredentialStore(context: Context) : CredentialStore {
 
     override fun clear() {
         file.delete()
+        recoveryFile.delete()
         pairingFile.delete()
     }
 
-    private fun readJson(): JSONObject? = if (!file.exists()) null else JSONObject(decrypt(file.readBytes()).toString(Charsets.UTF_8))
+    private fun readCredentials(target: File): NativeCredentials? = try {
+        readJson(target)?.let {
+            NativeCredentials(it.getString("access_token"), it.getString("refresh_token"))
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun readJson(target: File = file): JSONObject? =
+        if (!target.exists()) null else JSONObject(decrypt(target.readBytes()).toString(Charsets.UTF_8))
 
     private fun readPairingJson(): JSONObject? =
         if (!pairingFile.exists()) null else JSONObject(decrypt(pairingFile.readBytes()).toString(Charsets.UTF_8))
 
     private fun updateJson(update: JSONObject.() -> Unit) {
-        val body = readJson() ?: JSONObject()
+        val body = readJson(file) ?: JSONObject()
         body.update()
-        file.parentFile?.mkdirs()
-        file.writeBytes(encrypt(body.toString().toByteArray()))
+        writeEncrypted(file, body)
+    }
+
+    private fun writeEncrypted(target: File, body: JSONObject) {
+        target.parentFile?.mkdirs()
+        val bytes = encrypt(body.toString().toByteArray())
+        val temp = File(target.parentFile, "${target.name}.new")
+        java.io.FileOutputStream(temp).use { stream ->
+            stream.write(bytes)
+            stream.flush()
+            stream.fd.sync()
+        }
+        if (!temp.renameTo(target)) {
+            java.io.FileOutputStream(target).use { stream ->
+                stream.write(bytes)
+                stream.flush()
+                stream.fd.sync()
+            }
+            temp.delete()
+        }
     }
 
     private fun profileJson(profile: AccountProfile) = JSONObject().apply {

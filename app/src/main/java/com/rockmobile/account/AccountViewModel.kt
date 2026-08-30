@@ -181,22 +181,43 @@ class AccountViewModel(
     }
 
     private suspend fun probeStoredSession() {
-        val localProfile = withContext(ioDispatcher) { store.loadProfile() }
-        if (withContext(ioDispatcher) { store.load() } == null) return
+        val cachedProfile = withContext(ioDispatcher) { store.loadProfile() }
+        val hasCredentials = withContext(ioDispatcher) { store.load() } != null
+        SessionLog.probeStarted(hasCredentials)
+        if (!hasCredentials) return
         try {
-            loadAccount(localProfile)
+            loadAccount()
+            val connected = _state.value as? AccountUiState.Connected
+            if (connected != null) SessionLog.probeConnected(connected.profile.deviceId)
         } catch (error: Exception) {
-            if (error is ApiError && error.statusCode == 401) {
-                pairingJob?.cancel()
-                pendingPairing = null
-                _state.value = AccountUiState.Disconnected
-            } else if (localProfile != null) {
-                _state.value = AccountUiState.Connected(
-                    localProfile,
-                    emptyList(),
-                    "Не удалось обновить аккаунт. Радио продолжает работать без сервера.",
-                    devicesAvailable = false,
-                )
+            when {
+                error is ApiError && error.statusCode == 401 -> {
+                    SessionLog.refreshFailed(error)
+                    SessionLog.credentialsCleared("server rejected refresh")
+                    pairingJob?.cancel()
+                    pendingPairing = null
+                    _state.value = AccountUiState.Disconnected
+                }
+                error is IllegalStateException && error.message == "Failed to persist native session credentials" -> {
+                    SessionLog.persistFailed(error)
+                    if (cachedProfile != null) {
+                        _state.value = AccountUiState.Connected(
+                            cachedProfile,
+                            emptyList(),
+                            "Сессия обновлена на сервере, но не сохранилась на устройстве. Подключите телефон снова.",
+                            devicesAvailable = false,
+                        )
+                    }
+                }
+                cachedProfile != null -> {
+                    SessionLog.probeOffline("account probe degraded: ${error.message.orEmpty()}")
+                    _state.value = AccountUiState.Connected(
+                        cachedProfile,
+                        emptyList(),
+                        "Не удалось обновить аккаунт. Радио продолжает работать без сервера.",
+                        devicesAvailable = false,
+                    )
+                }
             }
         }
     }
@@ -268,13 +289,14 @@ class AccountViewModel(
                 return current
             }
             try {
-                withContext(ioDispatcher) {
-                    gateway.refresh(current.refreshToken).also { store.save(it) }
-                }
+                val fresh = withContext(ioDispatcher) { gateway.refresh(current.refreshToken) }
+                persistCredentials(fresh)
+                fresh
             } catch (error: ApiError) {
                 if (error.statusCode == 401) {
                     val stillCurrent = withContext(ioDispatcher) { store.load() }
                     if (stillCurrent?.refreshToken == expectedRefreshToken) {
+                        SessionLog.credentialsCleared("refresh rejected with stale token")
                         withContext(ioDispatcher) { store.clear() }
                     }
                 }
@@ -282,13 +304,17 @@ class AccountViewModel(
             }
         }
 
+    private suspend fun persistCredentials(credentials: NativeCredentials) {
+        withContext(ioDispatcher) { store.save(credentials) }
+    }
+
     private suspend fun awaitPairing(pending: PendingPairing) {
         while (pendingPairing == pending && nowMs() < pending.deadlineMs) {
             try {
                 val result = withContext(ioDispatcher) { gateway.completePairing(pending.request) }
                 if (pendingPairing != pending) return
                 withContext(ioDispatcher) {
-                    store.save(result.second)
+                    persistCredentials(result.second)
                     store.saveProfile(result.first)
                     store.clearPendingPairing()
                 }
