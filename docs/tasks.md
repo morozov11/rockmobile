@@ -1,5 +1,15 @@
 # RockMobile task log
 
+## RM-011 — 2026-08-30 — durable device-secret client sessions
+
+- Goal: make a paired phone survive access-token expiry and transient session-issuance failures.
+- Scope: persist `device_id` and `device_secret` through Android Keystore, replace refresh calls
+  with `/v1/auth/device-session`, and revoke the device for explicit disconnect.
+- Result: only `device_credential_invalid` clears the protected local binding; an unavailable
+  server leaves it available for retry.
+- Checks: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` passed.
+- Status: local client implementation complete; RockServer endpoint work remains before E2E.
+
 ## RM-011-R4 — 2026-08-30 — cross-task App Link return recovery
 
 - Goal: ensure Chrome's verified external App Link returns to the original pending RockMobile

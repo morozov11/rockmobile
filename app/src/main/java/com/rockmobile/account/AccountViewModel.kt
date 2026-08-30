@@ -67,7 +67,7 @@ class AccountViewModel(
     val state: StateFlow<AccountUiState> = _state.asStateFlow()
     private var pairingJob: Job? = null
     private var pendingPairing: PendingPairing? = null
-    private val sessionRefreshMutex = Mutex()
+    private val deviceSessionMutex = Mutex()
     private val accountSessionMutex = Mutex()
 
     init {
@@ -191,9 +191,9 @@ class AccountViewModel(
             if (connected != null) SessionLog.probeConnected(connected.profile.deviceId)
         } catch (error: Exception) {
             when {
-                error is ApiError && error.statusCode == 401 -> {
+                error is ApiError && error.code == "device_credential_invalid" -> {
                     SessionLog.refreshFailed(error)
-                    SessionLog.credentialsCleared("server rejected refresh")
+                    SessionLog.credentialsCleared("device credential revoked")
                     pairingJob?.cancel()
                     pendingPairing = null
                     _state.value = AccountUiState.Disconnected
@@ -241,9 +241,16 @@ class AccountViewModel(
 
     fun logout() = viewModelScope.launch {
         val credentials = withContext(ioDispatcher) { store.load() }
-        try { if (credentials != null) withContext(ioDispatcher) { gateway.logout(credentials.accessToken) } } catch (_: Exception) { }
-        withContext(ioDispatcher) { store.clear() }
-        _state.value = AccountUiState.Disconnected
+        try {
+            if (credentials != null) authorized { gateway.revokeDevice(it, credentials.deviceId) }
+            withContext(ioDispatcher) { store.clear() }
+            _state.value = AccountUiState.Disconnected
+        } catch (_: Exception) {
+            val connected = state.value as? AccountUiState.Connected
+            if (connected != null) {
+                _state.value = connected.copy(message = "Не удалось отключить устройство. Проверьте соединение с RockServer.")
+            }
+        }
     }
 
     private suspend fun loadAccount(profile: AccountProfile? = null) {
@@ -276,27 +283,31 @@ class AccountViewModel(
             withContext(ioDispatcher) { block(credentials.accessToken) }
         } catch (error: ApiError) {
             if (error.statusCode != 401) throw error
-            val fresh = rotateRefreshToken(credentials.refreshToken)
+            val fresh = renewDeviceSession(credentials.deviceId)
             withContext(ioDispatcher) { block(fresh.accessToken) }
         }
     }
 
-    private suspend fun rotateRefreshToken(expectedRefreshToken: String): NativeCredentials =
-        sessionRefreshMutex.withLock {
+    /** Replaces only the short-lived access token; the durable device secret never rotates. */
+    private suspend fun renewDeviceSession(expectedDeviceId: String): NativeCredentials =
+        deviceSessionMutex.withLock {
             val current = withContext(ioDispatcher) { store.load() }
                 ?: throw IllegalStateException("No session")
-            if (current.refreshToken != expectedRefreshToken) {
+            if (current.deviceId != expectedDeviceId) {
                 return current
             }
             try {
-                val fresh = withContext(ioDispatcher) { gateway.refresh(current.refreshToken) }
+                val freshAccessToken = withContext(ioDispatcher) {
+                    gateway.createDeviceSession(current.deviceId, current.deviceSecret)
+                }
+                val fresh = NativeCredentials(current.deviceId, current.deviceSecret, freshAccessToken)
                 persistCredentials(fresh)
                 fresh
             } catch (error: ApiError) {
-                if (error.statusCode == 401) {
+                if (error.code == "device_credential_invalid") {
                     val stillCurrent = withContext(ioDispatcher) { store.load() }
-                    if (stillCurrent?.refreshToken == expectedRefreshToken) {
-                        SessionLog.credentialsCleared("refresh rejected with stale token")
+                    if (stillCurrent?.deviceId == expectedDeviceId) {
+                        SessionLog.credentialsCleared("device credential revoked")
                         withContext(ioDispatcher) { store.clear() }
                     }
                 }

@@ -82,8 +82,17 @@ data class PendingPairingSnapshot(
     )
 }
 
-class NativeCredentials(val accessToken: String, val refreshToken: String) {
-    init { require(accessToken.length >= 16 && refreshToken.length >= 16) }
+/** Durable device binding plus a short-lived access token. */
+class NativeCredentials(
+    val deviceId: String,
+    val deviceSecret: String,
+    val accessToken: String,
+) {
+    init {
+        require(deviceId.isNotBlank())
+        require(deviceSecret.length >= 32)
+        require(accessToken.length >= 16)
+    }
 }
 
 data class AccountProfile(

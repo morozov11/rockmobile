@@ -9,11 +9,11 @@ interface AccountGateway {
     fun createPairing(deviceName: String): PairingRequest
     /** 202 means browser approval has not happened yet; the request body contains only desktop_token. */
     fun completePairing(pairing: PairingRequest): Pair<AccountProfile, NativeCredentials>
-    fun refresh(refreshToken: String): NativeCredentials
+    /** Issues a new short-lived access token for an already paired device. */
+    fun createDeviceSession(deviceId: String, deviceSecret: String): String
     fun profile(accessToken: String): AccountProfile
     fun devices(accessToken: String): List<AccountDevice>
     fun revokeDevice(accessToken: String, deviceId: String)
-    fun logout(accessToken: String)
 }
 
 class RockserverAccountGateway(private val api: RockserverApi, private val baseUrl: () -> String) : AccountGateway {
@@ -44,10 +44,12 @@ class RockserverAccountGateway(private val api: RockserverApi, private val baseU
         return completion(JSONObject(response.body))
     }
 
-    override fun refresh(refreshToken: String): NativeCredentials {
-        val response = api.post(baseUrl(), "/v1/auth/refresh", body = JSONObject().put("refresh_token", refreshToken))
+    override fun createDeviceSession(deviceId: String, deviceSecret: String): String {
+        val response = api.post(baseUrl(), "/v1/auth/device-session", body = JSONObject()
+            .put("device_id", deviceId)
+            .put("device_secret", deviceSecret))
         requireSuccess(response)
-        return credentials(JSONObject(response.body))
+        return JSONObject(response.body).getString("access_token")
     }
 
     override fun profile(accessToken: String): AccountProfile {
@@ -67,12 +69,8 @@ class RockserverAccountGateway(private val api: RockserverApi, private val baseU
         requireSuccess(api.delete(baseUrl(), "/v1/devices/$deviceId", accessToken))
     }
 
-    override fun logout(accessToken: String) {
-        requireSuccess(api.post(baseUrl(), "/v1/auth/logout", accessToken), allowUnauthorized = true)
-    }
-
-    private fun requireSuccess(response: com.rockmobile.data.api.HttpResponse, allowUnauthorized: Boolean = false) {
-        if (response.code !in 200..299 && !(allowUnauthorized && response.code == 401)) throw ApiError.from(response)
+    private fun requireSuccess(response: com.rockmobile.data.api.HttpResponse) {
+        if (response.code !in 200..299) throw ApiError.from(response)
     }
 
     private fun completion(body: JSONObject) = profile(body) to credentials(body)
@@ -89,7 +87,11 @@ class RockserverAccountGateway(private val api: RockserverApi, private val baseU
         lastSeenAt = body.optString("last_seen_at").takeIf(String::isNotBlank),
     )
 
-    private fun credentials(body: JSONObject) = NativeCredentials(body.getString("access_token"), body.getString("refresh_token"))
+    private fun credentials(body: JSONObject) = NativeCredentials(
+        deviceId = body.getString("device_id"),
+        deviceSecret = body.getString("device_secret"),
+        accessToken = body.getString("access_token"),
+    )
 
     private fun device(body: JSONObject) = AccountDevice(
         deviceId = body.getString("device_id"),

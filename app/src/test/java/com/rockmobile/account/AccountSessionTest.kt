@@ -116,17 +116,13 @@ class AccountSessionTest {
         assertEquals("a".repeat(16), transport.bearer)
     }
 
-    @Test fun refreshAndLogout_followNativeContract() {
+    @Test fun deviceSession_usesDurableCredential() {
         val transport = ScriptedTransport(post = HttpResponse(200, tokens))
         val gateway = RockserverAccountGateway(RockserverApi(transport)) { "https://server.test" }
-        assertEquals("a".repeat(16), gateway.refresh("r".repeat(16)).accessToken)
-        assertEquals("https://server.test/v1/auth/refresh", transport.url)
-        assertEquals("r".repeat(16), JSONObject(transport.body).getString("refresh_token"))
-
-        transport.post = HttpResponse(401, "{}")
-        gateway.logout("a".repeat(16))
-        assertEquals("https://server.test/v1/auth/logout", transport.url)
-        assertEquals("a".repeat(16), transport.bearer)
+        assertEquals("a".repeat(16), gateway.createDeviceSession("device", "s".repeat(43)))
+        assertEquals("https://server.test/v1/auth/device-session", transport.url)
+        assertEquals("device", JSONObject(transport.body).getString("device_id"))
+        assertEquals("s".repeat(43), JSONObject(transport.body).getString("device_secret"))
     }
 
     @Test fun unapprovedOrOfflineCompletion_doesNotProduceCredentials() {
@@ -344,29 +340,7 @@ class AccountSessionTest {
         }
     }
 
-    @Test fun viewModel_skipsStaleRefreshWhenCredentialsAlreadyRotated() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        try {
-            var gatewayRefreshCalls = 0
-            val gateway = object : FakeGateway() {
-                override fun refresh(refreshToken: String): NativeCredentials {
-                    gatewayRefreshCalls++
-                    throw ApiError(401, "authentication_required")
-                }
-            }
-            val store = StaleRefreshStore()
-            val viewModel = AccountViewModel(gateway, store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
-            runCurrent()
-            assertEquals(0, gatewayRefreshCalls)
-            assertEquals("new".repeat(16), store.credentials?.refreshToken)
-            assertTrue(viewModel.state.value is AccountUiState.Connected)
-        } finally {
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test fun viewModel_refreshLogoutAndRevokeUseStoredSession() = runTest {
+    @Test fun viewModel_renewsAccessAndRevokesStoredDevice() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         try {
@@ -376,7 +350,7 @@ class AccountSessionTest {
                     return super.profile(accessToken)
                 }
             }
-            val store = MemoryStore().apply { credentials = NativeCredentials("o".repeat(16), "r".repeat(16)) }
+            val store = MemoryStore().apply { credentials = credentials("o".repeat(16)) }
             val viewModel = AccountViewModel(gateway, store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
             runCurrent()
             assertEquals("new-access-token-1234", store.credentials?.accessToken)
@@ -385,7 +359,29 @@ class AccountSessionTest {
             assertEquals("other-device", gateway.revokedDeviceId)
             viewModel.logout()
             runCurrent()
-            assertTrue(gateway.loggedOut)
+            assertEquals("device", gateway.revokedDeviceId)
+            assertEquals(null, store.credentials)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun viewModel_clearsOnlyAnExplicitlyInvalidDeviceCredential() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val gateway = object : FakeGateway() {
+                override fun profile(accessToken: String): AccountProfile {
+                    throw ApiError(401, "authentication_required")
+                }
+
+                override fun createDeviceSession(deviceId: String, deviceSecret: String): String {
+                    throw ApiError(401, "device_credential_invalid")
+                }
+            }
+            val store = MemoryStore().apply { credentials = credentials("o".repeat(16)) }
+            AccountViewModel(gateway, store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
+            runCurrent()
             assertEquals(null, store.credentials)
         } finally {
             Dispatchers.resetMain()
@@ -397,7 +393,7 @@ class AccountSessionTest {
         Dispatchers.setMain(dispatcher)
         try {
             val store = MemoryStore().apply {
-                credentials = NativeCredentials("o".repeat(16), "r".repeat(16))
+                credentials = credentials("o".repeat(16))
             }
             val viewModel = AccountViewModel(FakeGateway(), store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
             runCurrent()
@@ -421,7 +417,7 @@ class AccountSessionTest {
                 deviceType = "rockmobile_android",
             )
             val store = MemoryStore().apply {
-                credentials = NativeCredentials("o".repeat(16), "r".repeat(16))
+                credentials = credentials("o".repeat(16))
                 this.profile = profile
             }
             val viewModel = AccountViewModel(FakeGateway().apply { approved = true }, store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
@@ -488,36 +484,6 @@ class AccountSessionTest {
         }
     }
 
-  /** First load returns an old refresh token; later loads expose already-rotated credentials. */
-    private class StaleRefreshStore : CredentialStore {
-        private val old = NativeCredentials("old-access-token-1234", "old".repeat(16))
-        private val new = NativeCredentials("new-access-token-1234", "new".repeat(16))
-        private val profile = AccountProfile(
-            userId = "owner",
-            sessionId = "session",
-            deviceId = "device",
-            accountDisplayName = "Alex's Rock account",
-            deviceDisplayName = "RockMobile — Pixel 9",
-            deviceType = "rockmobile_android",
-        )
-        var credentials: NativeCredentials? = old
-        private var loadCount = 0
-        override fun load(): NativeCredentials? {
-            if (loadCount == 0) {
-                loadCount++
-                return old
-            }
-            credentials = new
-            return new
-        }
-        override fun save(credentials: NativeCredentials) { this.credentials = credentials }
-        override fun loadProfile() = profile
-        override fun saveProfile(profile: AccountProfile) = Unit
-        override fun clear() {
-            credentials = null
-        }
-    }
-
     private open class FakeGateway : AccountGateway {
         var createCalls = 0
         var approved = false
@@ -525,7 +491,6 @@ class AccountSessionTest {
         var completionError: Throwable? = null
         var devicesError: Throwable? = null
         var revokedDeviceId: String? = null
-        var loggedOut = false
         private val profile = AccountProfile(
             userId = "owner",
             sessionId = "session",
@@ -542,24 +507,24 @@ class AccountSessionTest {
         override fun completePairing(pairing: PairingRequest): Pair<AccountProfile, NativeCredentials> {
             completionError?.let { throw it }
             if (!approved) throw ApiError(202, "pairing_pending")
-            return profile to NativeCredentials("a".repeat(16), "b".repeat(16))
+            return profile to credentials("a".repeat(16))
         }
-        override fun refresh(refreshToken: String) = NativeCredentials("new-access-token-1234", "new-refresh-token-1234")
+        override fun createDeviceSession(deviceId: String, deviceSecret: String) = "new-access-token-1234"
         override fun profile(accessToken: String) = profile
         override fun devices(accessToken: String): List<AccountDevice> {
             devicesError?.let { throw it }
             return listOf(AccountDevice("device", "owner", "RockMobile — Pixel 9", "rockmobile_android"))
         }
         override fun revokeDevice(accessToken: String, deviceId: String) { revokedDeviceId = deviceId }
-        override fun logout(accessToken: String) { loggedOut = true }
     }
 
     private companion object {
         val createdPairing = """
             {"pairing_request_id":"request","desktop_token":"${"d".repeat(16)}","approval_secret":"secret","short_code":"AB12CD34","verification_phrase":"AMBER-DAWN","device_display_name":"Pixel 9","device_type":"rockmobile_android","expires_at":"2099-08-28T12:00:00Z","status":"pending"}
         """.trimIndent()
-        val tokens = """{"access_token":"${"a".repeat(16)}","refresh_token":"${"r".repeat(16)}"}"""
-        val completion = """{"user_id":"user","device_id":"device","session_id":"session","access_token":"${"a".repeat(16)}","refresh_token":"${"r".repeat(16)}","account_display_name":"Alex's Rock account","device_display_name":"RockMobile — Pixel 9","device_type":"rockmobile_android"}"""
+        fun credentials(accessToken: String) = NativeCredentials("device", "s".repeat(43), accessToken)
+        val tokens = """{"access_token":"${"a".repeat(16)}"}"""
+        val completion = """{"user_id":"user","device_id":"device","session_id":"session","access_token":"${"a".repeat(16)}","device_secret":"${"s".repeat(43)}","account_display_name":"Alex's Rock account","device_display_name":"RockMobile — Pixel 9","device_type":"rockmobile_android"}"""
         val devices = """{"devices":[{"device_id":"device-2","user_id":"owner","device_display_name":"RockCast — Office","device_type":"windows","created_at":"2026-08-28T12:00:00Z"}]}"""
     }
 }

@@ -1,5 +1,14 @@
 # RockMobile status
 
+## RM-011 durable device-secret sessions (implemented locally, 2026-08-30)
+
+RockMobile now keeps a `device_id` and persistent `device_secret` in its Android Keystore-protected
+credential blob, alongside the replaceable access token. A protected-request `401` obtains a new
+token through `POST /v1/auth/device-session`; the binding is cleared only for
+`device_credential_invalid`. The old rotating refresh-token and native logout endpoints are no
+longer used. Server support for the new endpoint is required before staging E2E.
+Verified: `testDebugUnitTest`, `lintDebug`, and `assembleRelease` passed locally.
+
 ## RM-011 App Link return recovery (physical defect fixed locally, 2026-08-30)
 
 The exact, credential-free App Link return route now uses Android `singleTask` launch behavior.

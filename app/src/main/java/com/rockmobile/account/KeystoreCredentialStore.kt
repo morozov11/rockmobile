@@ -47,17 +47,21 @@ class KeystoreCredentialStore(context: Context) : CredentialStore {
 
     override fun save(credentials: NativeCredentials) {
         val recoveryBody = JSONObject().apply {
+            put("device_id", credentials.deviceId)
+            put("device_secret", credentials.deviceSecret)
             put("access_token", credentials.accessToken)
-            put("refresh_token", credentials.refreshToken)
         }
         writeEncrypted(recoveryFile, recoveryBody)
         updateJson {
-            put("access_token", credentials.accessToken).put("refresh_token", credentials.refreshToken)
+            put("device_id", credentials.deviceId)
+                .put("device_secret", credentials.deviceSecret)
+                .put("access_token", credentials.accessToken)
         }
         recoveryFile.delete()
         val persisted = readCredentials(file)
         if (persisted?.accessToken != credentials.accessToken ||
-            persisted.refreshToken != credentials.refreshToken
+            persisted?.deviceId != credentials.deviceId ||
+            persisted.deviceSecret != credentials.deviceSecret
         ) {
             error("Failed to persist native session credentials")
         }
@@ -87,7 +91,11 @@ class KeystoreCredentialStore(context: Context) : CredentialStore {
 
     private fun readCredentials(target: File): NativeCredentials? = try {
         readJson(target)?.let {
-            NativeCredentials(it.getString("access_token"), it.getString("refresh_token"))
+            NativeCredentials(
+                deviceId = it.getString("device_id"),
+                deviceSecret = it.getString("device_secret"),
+                accessToken = it.getString("access_token"),
+            )
         }
     } catch (_: Exception) {
         null
