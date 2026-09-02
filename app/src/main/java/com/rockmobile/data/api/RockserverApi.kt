@@ -71,7 +71,7 @@ class RockserverApi(
     private val transport: HttpTransport = UrlConnectionTransport(),
 ) {
     fun search(baseUrl: String, bearerToken: String, query: String): String {
-        val endpoint = baseUrl.trim().trimEnd('/') + "/v1/search"
+        val endpoint = endpoint(baseUrl, "$API_V1_PREFIX/search")
         val request = JSONObject().put("query", query).put("locale", "en-US").put("limit", 20)
         val response = transport.post(endpoint, bearerToken, request.toString())
         if (response.code !in 200..299) throw ApiError.from(response)
@@ -87,7 +87,7 @@ class RockserverApi(
                 append(URLEncoder.encode(it, StandardCharsets.UTF_8.name()))
             }
         }
-        val response = transport.get(endpoint(baseUrl, "/v1/catalog/stations$query"), bearerToken)
+        val response = transport.get(endpoint(baseUrl, "$API_V1_PREFIX/catalog/stations$query"), bearerToken)
         if (response.code !in 200..299) throw ApiError.from(response)
         return response.body
     }
@@ -102,4 +102,9 @@ class RockserverApi(
         transport.delete(endpoint(baseUrl, route), bearerToken)
 
     private fun endpoint(baseUrl: String, route: String) = baseUrl.trim().trimEnd('/') + route
+
+    companion object {
+        /** Canonical RockServer API prefix for all public and native client routes. */
+        const val API_V1_PREFIX = "/api/v1"
+    }
 }

@@ -22,6 +22,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountSessionTest {
@@ -95,7 +96,7 @@ class AccountSessionTest {
         assertEquals("device", result.first.deviceId)
         assertEquals("Alex's Rock account", result.first.accountDisplayName)
         assertEquals("RockMobile — Pixel 9", result.first.deviceDisplayName)
-        assertEquals("https://server.test/v1/pairing-requests/request/complete", transport.url)
+        assertEquals("https://server.test/api/v1/pairing-requests/request/complete", transport.url)
         assertEquals("d".repeat(16), JSONObject(transport.body).getString("desktop_token"))
         assertFalse(JSONObject(transport.body).has("user_id"))
     }
@@ -112,17 +113,79 @@ class AccountSessionTest {
 
         assertEquals("RockCast — Office", listed.single().deviceDisplayName)
         assertEquals("windows", listed.single().deviceType)
-        assertEquals("https://server.test/v1/devices/device-2", transport.url)
+        assertEquals("https://server.test/api/v1/devices/device-2", transport.url)
         assertEquals("a".repeat(16), transport.bearer)
     }
 
     @Test fun deviceSession_usesDurableCredential() {
-        val transport = ScriptedTransport(post = HttpResponse(200, tokens))
+        val transport = ScriptedTransport(post = HttpResponse(200, deviceSession("a".repeat(16))))
         val gateway = RockserverAccountGateway(RockserverApi(transport)) { "https://server.test" }
-        assertEquals("a".repeat(16), gateway.createDeviceSession("device", "s".repeat(43)))
-        assertEquals("https://server.test/v1/auth/device-session", transport.url)
+        val session = gateway.createDeviceSession("device", "s".repeat(43))
+        assertEquals("a".repeat(16), session.accessToken)
+        assertEquals("https://server.test/api/v1/auth/device-session", transport.url)
         assertEquals("device", JSONObject(transport.body).getString("device_id"))
         assertEquals("s".repeat(43), JSONObject(transport.body).getString("device_secret"))
+    }
+
+    @Test fun voiceAccessToken_reusesFreshSessionWithoutRenewal() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val now = 1_700_000_000_000L
+        try {
+            val transport = ScriptedTransport(post = HttpResponse(500, "{}"))
+            val store = MemoryStore().apply { credentials = credentials("fresh-access-token", now + 600_000) }
+            val viewModel = AccountViewModel(
+                RockserverAccountGateway(RockserverApi(transport)) { "https://server.test" },
+                store,
+                dispatcher,
+                { now },
+            )
+            advanceUntilIdle()
+            assertEquals("fresh-access-token", viewModel.voiceAccessToken())
+            assertTrue(transport.postUrls.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun voiceAccessToken_renewsWhenExpiryIsNear() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val now = 1_700_000_000_000L
+        var renewCalls = 0
+        try {
+            val gateway = object : FakeGateway() {
+                override fun createDeviceSession(deviceId: String, deviceSecret: String): NativeCredentials {
+                    renewCalls++
+                    return credentials("new-access-token-1234", now + 600_000)
+                }
+
+                override fun profile(accessToken: String): AccountProfile =
+                    throw ApiError(503, "pairing_unavailable")
+            }
+            val store = MemoryStore().apply {
+                credentials = credentials("old-access-token", now + 30_000)
+            }
+            val viewModel = AccountViewModel(gateway, store, dispatcher, { now })
+            advanceUntilIdle()
+            assertTrue(renewCalls >= 1)
+            assertEquals("new-access-token-1234", viewModel.voiceAccessToken())
+            assertEquals(1, renewCalls)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun voiceAccessToken_withoutCredentials_returnsNull() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val viewModel = AccountViewModel(FakeGateway(), MemoryStore(), dispatcher, { testScheduler.currentTime })
+            runCurrent()
+            assertEquals(null, viewModel.voiceAccessToken())
+        } finally {
+            Dispatchers.resetMain()
+        }
     }
 
     @Test fun unapprovedOrOfflineCompletion_doesNotProduceCredentials() {
@@ -375,7 +438,7 @@ class AccountSessionTest {
                     throw ApiError(401, "authentication_required")
                 }
 
-                override fun createDeviceSession(deviceId: String, deviceSecret: String): String {
+                override fun createDeviceSession(deviceId: String, deviceSecret: String): NativeCredentials {
                     throw ApiError(401, "device_credential_invalid")
                 }
             }
@@ -383,6 +446,30 @@ class AccountSessionTest {
             AccountViewModel(gateway, store, dispatcher, { testScheduler.currentTime }, 1_000, 100)
             runCurrent()
             assertEquals(null, store.credentials)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun viewModel_legacyCredentialsWithoutExpiry_renewAndPersist() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val now = 1_700_000_000_000L
+        try {
+            val transport = ScriptedTransport(post = HttpResponse(200, deviceSession("renewed-access-token")))
+            val store = MemoryStore().apply { credentials = credentials("old-access-token", accessExpiresAtMs = 0L) }
+            AccountViewModel(
+                RockserverAccountGateway(RockserverApi(transport)) { "https://server.test" },
+                store,
+                dispatcher,
+                { now },
+                1_000,
+                100,
+            )
+            advanceUntilIdle()
+            assertEquals("renewed-access-token", store.credentials?.accessToken)
+            assertTrue((store.credentials?.accessExpiresAtMs ?: 0L) > now)
+            assertEquals("https://server.test/api/v1/auth/device-session", transport.postUrls.single())
         } finally {
             Dispatchers.resetMain()
         }
@@ -452,10 +539,12 @@ class AccountSessionTest {
         var get: HttpResponse = HttpResponse(404, "{}"),
         var delete: HttpResponse = HttpResponse(404, "{}"),
     ) : HttpTransport {
+        val postUrls = mutableListOf<String>()
         lateinit var url: String
         lateinit var bearer: String
         lateinit var body: String
         override fun post(url: String, bearerToken: String, jsonBody: String): HttpResponse {
+            postUrls += url
             this.url = url; bearer = bearerToken; body = jsonBody; return post
         }
         override fun get(url: String, bearerToken: String): HttpResponse {
@@ -509,7 +598,7 @@ class AccountSessionTest {
             if (!approved) throw ApiError(202, "pairing_pending")
             return profile to credentials("a".repeat(16))
         }
-        override fun createDeviceSession(deviceId: String, deviceSecret: String) = "new-access-token-1234"
+        override fun createDeviceSession(deviceId: String, deviceSecret: String) = credentials("new-access-token-1234")
         override fun profile(accessToken: String) = profile
         override fun devices(accessToken: String): List<AccountDevice> {
             devicesError?.let { throw it }
@@ -522,9 +611,13 @@ class AccountSessionTest {
         val createdPairing = """
             {"pairing_request_id":"request","desktop_token":"${"d".repeat(16)}","approval_secret":"secret","short_code":"AB12CD34","verification_phrase":"AMBER-DAWN","device_display_name":"Pixel 9","device_type":"rockmobile_android","expires_at":"2099-08-28T12:00:00Z","status":"pending"}
         """.trimIndent()
-        fun credentials(accessToken: String) = NativeCredentials("device", "s".repeat(43), accessToken)
-        val tokens = """{"access_token":"${"a".repeat(16)}"}"""
-        val completion = """{"user_id":"user","device_id":"device","session_id":"session","access_token":"${"a".repeat(16)}","device_secret":"${"s".repeat(43)}","account_display_name":"Alex's Rock account","device_display_name":"RockMobile — Pixel 9","device_type":"rockmobile_android"}"""
+        fun credentials(accessToken: String, accessExpiresAtMs: Long = futureExpiryMs()) =
+            NativeCredentials("device", "s".repeat(43), accessToken, accessExpiresAtMs)
+        fun futureExpiryMs() = Instant.now().plusSeconds(600).toEpochMilli()
+        fun deviceSession(accessToken: String, accessExpiresAtMs: Long = futureExpiryMs()) =
+            """{"access_token":"$accessToken","access_expires_at":"${Instant.ofEpochMilli(accessExpiresAtMs)}"}"""
+        val tokens = deviceSession("a".repeat(16))
+        val completion = """{"user_id":"user","device_id":"device","session_id":"session","access_token":"${"a".repeat(16)}","access_expires_at":"${Instant.ofEpochMilli(futureExpiryMs())}","device_secret":"${"s".repeat(43)}","account_display_name":"Alex's Rock account","device_display_name":"RockMobile — Pixel 9","device_type":"rockmobile_android"}"""
         val devices = """{"devices":[{"device_id":"device-2","user_id":"owner","device_display_name":"RockCast — Office","device_type":"windows","created_at":"2026-08-28T12:00:00Z"}]}"""
     }
 }

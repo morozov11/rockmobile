@@ -69,9 +69,10 @@ class MainActivity : ComponentActivity() {
             val state = model.state.collectAsStateWithLifecycle().value
             val personal = personalData.state.collectAsStateWithLifecycle().value
             val playback = androidx.compose.runtime.remember { PlaybackController(this, unavailableVoiceStations) }
-            val voice = androidx.compose.runtime.remember {
+            val voice = androidx.compose.runtime.remember(account) {
                 VoiceCommandController(
-                    AndroidVoiceRecorder(this), RockserverVoiceClient(), settings::rockserverUrl, settings::bearerToken,
+                    AndroidVoiceRecorder(this), RockserverVoiceClient(), settings::rockserverUrl,
+                    bearerToken = { account.voiceAccessToken().orEmpty() },
                     object : VoicePlaybackActions {
                         override fun beginVoiceCapture() = playback.beginVoiceCapture()
                         override fun endVoiceCapture() = playback.endVoiceCapture()

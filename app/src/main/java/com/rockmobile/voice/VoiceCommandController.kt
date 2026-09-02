@@ -47,7 +47,7 @@ class VoiceCommandController(
     private val recorder: VoiceRecorder,
     private val client: VoiceCommandClient,
     private val baseUrl: () -> String,
-    private val bearerToken: () -> String,
+    private val bearerToken: suspend () -> String,
     private val playback: VoicePlaybackActions,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -87,7 +87,8 @@ class VoiceCommandController(
     private suspend fun processCapturedAudio(audio: RecordedVoice) {
         _state.value = VoiceUiState.Processing()
         require(audio.pcmS16Le.isNotEmpty()) { "No speech was recorded" }
-        val result = withContext(ioDispatcher) { client.resolve(baseUrl(), bearerToken(), audio) { transcript -> _state.value = VoiceUiState.Processing(transcript) } }
+        val token = bearerToken()
+        val result = withContext(ioDispatcher) { client.resolve(baseUrl(), token, audio) { transcript -> _state.value = VoiceUiState.Processing(transcript) } }
         when (result) {
             is VoiceResolution.StationMatch -> {
                 val stationToPlay = playback.showCandidates(result.candidates)

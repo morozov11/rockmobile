@@ -10,7 +10,7 @@ interface AccountGateway {
     /** 202 means browser approval has not happened yet; the request body contains only desktop_token. */
     fun completePairing(pairing: PairingRequest): Pair<AccountProfile, NativeCredentials>
     /** Issues a new short-lived access token for an already paired device. */
-    fun createDeviceSession(deviceId: String, deviceSecret: String): String
+    fun createDeviceSession(deviceId: String, deviceSecret: String): NativeCredentials
     fun profile(accessToken: String): AccountProfile
     fun devices(accessToken: String): List<AccountDevice>
     fun revokeDevice(accessToken: String, deviceId: String)
@@ -18,7 +18,7 @@ interface AccountGateway {
 
 class RockserverAccountGateway(private val api: RockserverApi, private val baseUrl: () -> String) : AccountGateway {
     override fun createPairing(deviceName: String): PairingRequest {
-        val response = api.post(baseUrl(), "/v1/pairing-requests", body = JSONObject()
+        val response = api.post(baseUrl(), "${RockserverApi.API_V1_PREFIX}/pairing-requests", body = JSONObject()
             .put("device_display_name", deviceName.trim())
             .put("device_type", "rockmobile_android")
             .put("app_version", BuildConfig.VERSION_NAME))
@@ -38,35 +38,41 @@ class RockserverAccountGateway(private val api: RockserverApi, private val baseU
     }
 
     override fun completePairing(pairing: PairingRequest): Pair<AccountProfile, NativeCredentials> {
-        val response = api.post(baseUrl(), "/v1/pairing-requests/${pairing.requestId}/complete", body = pairing.completionBody())
+        val response = api.post(baseUrl(), "${RockserverApi.API_V1_PREFIX}/pairing-requests/${pairing.requestId}/complete", body = pairing.completionBody())
         if (response.code == 202) throw ApiError.from(response)
         requireSuccess(response)
         return completion(JSONObject(response.body))
     }
 
-    override fun createDeviceSession(deviceId: String, deviceSecret: String): String {
-        val response = api.post(baseUrl(), "/v1/auth/device-session", body = JSONObject()
+    override fun createDeviceSession(deviceId: String, deviceSecret: String): NativeCredentials {
+        val response = api.post(baseUrl(), "${RockserverApi.API_V1_PREFIX}/auth/device-session", body = JSONObject()
             .put("device_id", deviceId)
             .put("device_secret", deviceSecret))
         requireSuccess(response)
-        return JSONObject(response.body).getString("access_token")
+        val body = JSONObject(response.body)
+        return NativeCredentials(
+            deviceId = deviceId,
+            deviceSecret = deviceSecret,
+            accessToken = body.getString("access_token"),
+            accessExpiresAtMs = parseAccessExpiresAtMs(body),
+        )
     }
 
     override fun profile(accessToken: String): AccountProfile {
-        val response = api.get(baseUrl(), "/v1/account/profile", accessToken)
+        val response = api.get(baseUrl(), "${RockserverApi.API_V1_PREFIX}/account/profile", accessToken)
         requireSuccess(response)
         return profile(JSONObject(response.body))
     }
 
     override fun devices(accessToken: String): List<AccountDevice> {
-        val response = api.get(baseUrl(), "/v1/devices", accessToken)
+        val response = api.get(baseUrl(), "${RockserverApi.API_V1_PREFIX}/devices", accessToken)
         requireSuccess(response)
         val devices = JSONObject(response.body).getJSONArray("devices")
         return List(devices.length()) { index -> device(devices.getJSONObject(index)) }
     }
 
     override fun revokeDevice(accessToken: String, deviceId: String) {
-        requireSuccess(api.delete(baseUrl(), "/v1/devices/$deviceId", accessToken))
+        requireSuccess(api.delete(baseUrl(), "${RockserverApi.API_V1_PREFIX}/devices/$deviceId", accessToken))
     }
 
     private fun requireSuccess(response: com.rockmobile.data.api.HttpResponse) {
@@ -91,6 +97,7 @@ class RockserverAccountGateway(private val api: RockserverApi, private val baseU
         deviceId = body.getString("device_id"),
         deviceSecret = body.getString("device_secret"),
         accessToken = body.getString("access_token"),
+        accessExpiresAtMs = parseAccessExpiresAtMs(body),
     )
 
     private fun device(body: JSONObject) = AccountDevice(

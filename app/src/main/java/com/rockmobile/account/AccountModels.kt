@@ -87,11 +87,13 @@ class NativeCredentials(
     val deviceId: String,
     val deviceSecret: String,
     val accessToken: String,
+    val accessExpiresAtMs: Long,
 ) {
     init {
         require(deviceId.isNotBlank())
         require(deviceSecret.length >= 32)
         require(accessToken.length >= 16)
+        require(accessExpiresAtMs >= 0L)
     }
 }
 

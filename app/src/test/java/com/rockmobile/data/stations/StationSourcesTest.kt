@@ -76,7 +76,7 @@ class StationSourcesTest {
         val source = RockserverStationSource(RockserverApi(transport), { "https://server.test" }, { "token" })
         assertEquals(listOf("first", "second"), source.loadCatalogue()?.map { it.id })
         assertEquals(
-            listOf("https://server.test/v1/catalog/stations?limit=50", "https://server.test/v1/catalog/stations?limit=50&cursor=first"),
+            listOf("https://server.test/api/v1/catalog/stations?limit=50", "https://server.test/api/v1/catalog/stations?limit=50&cursor=first"),
             transport.urls,
         )
     }
@@ -84,7 +84,7 @@ class StationSourcesTest {
     @Test fun remote_search_usesPublicLimitCap() {
         val transport = CapturingTransport(200, validJson)
         RockserverApi(transport).search("https://alex.vault57.ru", "", "rock")
-        assertEquals("https://alex.vault57.ru/v1/search", transport.url)
+        assertEquals("https://alex.vault57.ru/api/v1/search", transport.url)
         assertEquals("", transport.bearerToken)
         assertEquals(20, org.json.JSONObject(transport.body).getInt("limit"))
     }

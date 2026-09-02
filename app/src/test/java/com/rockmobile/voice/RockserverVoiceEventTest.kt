@@ -29,9 +29,9 @@ class RockserverVoiceEventTest {
     }
 
     @Test fun voiceStreamUrl_preservesTlsAndUsesPublicPath() {
-        assertEquals("wss://alex.vault57.ru/v1/voice/stream", voiceStreamUrl("https://alex.vault57.ru"))
-        assertEquals("wss://alex.vault57.ru/v1/voice/stream", voiceStreamUrl("https://alex.vault57.ru/"))
-        assertEquals("ws://127.0.0.1:3000/v1/voice/stream", voiceStreamUrl("http://127.0.0.1:3000"))
+        assertEquals("wss://alex.vault57.ru/api/v1/voice/stream", voiceStreamUrl("https://alex.vault57.ru"))
+        assertEquals("wss://alex.vault57.ru/api/v1/voice/stream", voiceStreamUrl("https://alex.vault57.ru/"))
+        assertEquals("ws://127.0.0.1:3000/api/v1/voice/stream", voiceStreamUrl("http://127.0.0.1:3000"))
     }
 
     @Test fun voiceStartMessage_matchesPublicBufferedContract() {

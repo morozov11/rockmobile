@@ -1,5 +1,6 @@
 package com.rockmobile.voice
 
+import com.rockmobile.data.api.RockserverApi
 import com.rockmobile.domain.model.Station
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeout
@@ -113,7 +114,7 @@ private fun JSONObject.optional(name: String) = optString(name).trim().takeIf(St
 
 /** Maps an HTTPS RockServer base URL onto the public voice WebSocket path (TLS preserved). */
 internal fun voiceStreamUrl(baseUrl: String): String =
-    baseUrl.trim().trimEnd('/').replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/v1/voice/stream"
+    baseUrl.trim().trimEnd('/').replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "${RockserverApi.API_V1_PREFIX}/voice/stream"
 
 /** Public buffered voice start frame; limit is clamped server-side to at most 10. */
 internal fun voiceStartMessage(sampleRateHz: Int): String =

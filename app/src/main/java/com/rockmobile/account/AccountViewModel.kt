@@ -278,7 +278,7 @@ class AccountViewModel(
     }
 
     private suspend fun <T> authorized(block: (String) -> T): T {
-        val credentials = withContext(ioDispatcher) { store.load() } ?: throw IllegalStateException("No session")
+        val credentials = ensureFreshAccessToken()
         return try {
             withContext(ioDispatcher) { block(credentials.accessToken) }
         } catch (error: ApiError) {
@@ -286,6 +286,12 @@ class AccountViewModel(
             val fresh = renewDeviceSession(credentials.deviceId)
             withContext(ioDispatcher) { block(fresh.accessToken) }
         }
+    }
+
+    private suspend fun ensureFreshAccessToken(): NativeCredentials {
+        val current = withContext(ioDispatcher) { store.load() } ?: throw IllegalStateException("No session")
+        if (!accessTokenNeedsRefresh(current.accessExpiresAtMs, nowMs())) return current
+        return renewDeviceSession(current.deviceId)
     }
 
     /** Replaces only the short-lived access token; the durable device secret never rotates. */
@@ -300,9 +306,8 @@ class AccountViewModel(
                 val freshAccessToken = withContext(ioDispatcher) {
                     gateway.createDeviceSession(current.deviceId, current.deviceSecret)
                 }
-                val fresh = NativeCredentials(current.deviceId, current.deviceSecret, freshAccessToken)
-                persistCredentials(fresh)
-                fresh
+                persistCredentials(freshAccessToken)
+                freshAccessToken
             } catch (error: ApiError) {
                 if (error.code == "device_credential_invalid") {
                     val stillCurrent = withContext(ioDispatcher) { store.load() }
@@ -393,6 +398,11 @@ class AccountViewModel(
             devicesAvailable = firstTime.devicesAvailable,
         )
     }
+
+    /** Returns a still-valid access token for authenticated voice sessions. */
+    suspend fun voiceAccessToken(): String? = runCatching {
+        ensureFreshAccessToken().accessToken
+    }.getOrNull()
 
     override fun onCleared() { pairingJob?.cancel() }
 }
