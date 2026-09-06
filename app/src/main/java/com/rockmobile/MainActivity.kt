@@ -40,6 +40,10 @@ import com.rockmobile.account.AccountViewModel
 import com.rockmobile.account.KeystoreCredentialStore
 import com.rockmobile.account.RockserverAccountGateway
 import com.rockmobile.account.accountSessionActive
+import com.rockmobile.devicecontrol.DeviceControlDirectoryApi
+import com.rockmobile.devicecontrol.OkHttpDirectorySocketFactory
+import com.rockmobile.devicecontrol.TargetDirectoryRepository
+import com.rockmobile.devicecontrol.TargetDirectoryViewModel
 
 class MainActivity : ComponentActivity() {
     private var accountViewModel: AccountViewModel? = null
@@ -60,6 +64,10 @@ class MainActivity : ComponentActivity() {
             RockmobileTheme {
             val model: StationsViewModel = viewModel(factory = StationsViewModelFactory(repository, unavailableVoiceStations::unavailableStationIds))
             val account = viewModel<AccountViewModel>(factory = AccountViewModelFactory(RockserverAccountGateway(RockserverApi(), settings::rockserverUrl), KeystoreCredentialStore(applicationContext))).also { accountViewModel = it }
+            val targetDirectory = viewModel<TargetDirectoryViewModel>(factory = TargetDirectoryViewModelFactory(
+                TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(), settings::rockserverUrl), OkHttpDirectorySocketFactory(), settings),
+                account::directorySession,
+            ))
             val accountState = account.state.collectAsStateWithLifecycle().value
             val accountConnected = accountSessionActive(accountState)
             androidx.compose.runtime.LaunchedEffect(account) {
@@ -98,7 +106,7 @@ class MainActivity : ComponentActivity() {
                 }, onFinishVoice = voice::finishRecording, onCancelVoice = voice::cancel, onDismissVoice = voice::dismiss,
                 openPlayer = { playerScreen = true }, personal = personal, toggleFavourite = { station -> personalData.toggleFavourite(station) }, openAccount = { account.ensureSessionVisible(); accountOpen = true }, accountConnected = accountConnected, clearHistory = personalData::clearHistory,
             )
-            if (accountOpen) AccountDialog(account, settings.rockserverUrl()) { accountOpen = false }
+            if (accountOpen) AccountDialog(account, settings.rockserverUrl(), targetDirectory) { accountOpen = false }
             }
         }
     }
@@ -142,4 +150,12 @@ private class AccountViewModelFactory(
     private val store: KeystoreCredentialStore,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = AccountViewModel(gateway, store) as T
+}
+
+private class TargetDirectoryViewModelFactory(
+    private val repository: TargetDirectoryRepository,
+    private val sessionProvider: suspend () -> com.rockmobile.devicecontrol.ControllerSession?,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        TargetDirectoryViewModel(repository, sessionProvider) as T
 }

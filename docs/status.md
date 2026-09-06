@@ -1,5 +1,24 @@
 # RockMobile status
 
+## DC-015 target selector (complete locally, 2026-09-06)
+
+RockMobile now has an owner-scoped device-control directory selector inside the existing account
+dialog. It uses the existing native session for typed `GET /api/v1/device-control/directory` and
+the controller WebSocket registration; no pairing, device-list, revoke, credential store or
+ordinary radio flow was replaced. Strict DTO decoding stays at the `devicecontrol` API boundary.
+The repository maps only domain targets into Compose, applies monotonic directory revisions,
+reloads on gaps/resync/loss, bounds WSS frames and retries without a busy loop.
+
+Only a target tapped by the user is persisted by account/controller-device context. Missing,
+revoked, offline, stale or unknown targets are invalidated visibly, never substituted. The
+selector presents RockCast truthfully through type/player role, online and freshness state, but
+contains no playback/volume/relay/Chromecast controls or command dispatch. DC-016 remains the
+separate command/control UI task.
+
+Verified with `:app:testDebugUnitTest` (including five fake typed REST/WSS directory cases),
+`:app:lintDebug`, `:app:assembleDebug` and `git diff --check`. DC-016 remains explicitly separate:
+there is still no command dispatch or control UI.
+
 ## RM-011 durable device-secret sessions (implemented locally, 2026-08-30)
 
 RockMobile now keeps a `device_id` and persistent `device_secret` in its Android Keystore-protected

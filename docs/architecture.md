@@ -12,6 +12,11 @@ StationsScreen ── VoiceCommandController ── VoiceRecorder / RockserverVo
 
 AccountScreen ── AccountViewModel ── AccountGateway ── RockserverApi
                                   └── CredentialStore ── Android Keystore
+
+AccountScreen ── TargetDirectoryViewModel ── TargetDirectoryRepository
+                              ├── DeviceControlDirectoryApi (typed REST DTOs)
+                              ├── authenticated controller WSS
+                              └── SettingsRepository (explicit target ID only)
 ```
 
 ## Каталог
@@ -43,6 +48,20 @@ account/device display names сохраняются вместе с credentials 
 зашифрованное хранилище и lifecycle ViewModel. UI не знает о формате HTTP-ответов, а ViewModel
 зависит от `AccountGateway`/`CredentialStore`, поэтому G3/G7 можно добавить без подмены
 неподдерживаемых маршрутов.
+
+## Target directory (DC-015)
+
+После явного подключения аккаунта selector читает только разрешённую server-side directory
+projection через тот же short-lived native session. `devicecontrol` изолирует strict
+`kotlinx.serialization` DTOs, REST и WebSocket envelopes от domain/UI. Unknown capabilities and
+safe unknown messages do not cross the boundary; malformed known messages are rejected there.
+The repository applies monotonic snapshots/upserts/removals and reloads after a revision gap,
+directory resync request or connection loss. It never exposes a command path.
+
+Only an explicitly tapped target ID is saved, scoped by account and controller device. A missing,
+revoked, offline, stale or unknown selected target is cleared rather than replaced from a display
+name; the UI shows a requires-selection state. Ordinary account inventory, pairing, radio and
+offline catalogue remain independent.
 
 ## Воспроизведение
 

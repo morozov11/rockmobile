@@ -3,6 +3,7 @@ package com.rockmobile.account
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rockmobile.data.api.ApiError
+import com.rockmobile.devicecontrol.ControllerSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -402,6 +403,13 @@ class AccountViewModel(
     /** Returns a still-valid access token for authenticated voice sessions. */
     suspend fun voiceAccessToken(): String? = runCatching {
         ensureFreshAccessToken().accessToken
+    }.getOrNull()
+
+    /** Reuses the native device session for directory reads; no second credential is created. */
+    suspend fun directorySession(): ControllerSession? = runCatching {
+        val connected = state.value as? AccountUiState.Connected ?: return null
+        val credentials = ensureFreshAccessToken()
+        ControllerSession(connected.profile.userId, credentials.deviceId, credentials.accessToken)
     }.getOrNull()
 
     override fun onCleared() { pairingJob?.cancel() }

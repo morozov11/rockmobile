@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /** Central location for the fixed public server URL; account credentials never live here. */
-class SettingsRepository(context: Context) {
+class SettingsRepository(context: Context) : com.rockmobile.devicecontrol.TargetSelectionStore {
     private val preferences = context.getSharedPreferences("rockmobile_settings", Context.MODE_PRIVATE)
 
     init {
@@ -14,6 +14,19 @@ class SettingsRepository(context: Context) {
     fun rockserverUrl(): String = PRODUCTION_BASE_URL
     /** Anonymous catalogue/voice routes do not need a bearer token. Native account tokens use KeystoreCredentialStore. */
     fun bearerToken(): String = ""
+
+    override fun load(userId: String, controllerDeviceId: String): String? =
+        preferences.getString(targetKey(userId, controllerDeviceId), null)?.takeIf(String::isNotBlank)
+
+    override fun save(userId: String, controllerDeviceId: String, targetId: String) {
+        preferences.edit().putString(targetKey(userId, controllerDeviceId), targetId).apply()
+    }
+
+    override fun clear(userId: String, controllerDeviceId: String) {
+        preferences.edit().remove(targetKey(userId, controllerDeviceId)).apply()
+    }
+
+    private fun targetKey(userId: String, controllerDeviceId: String) = "selected_control_target:$userId:$controllerDeviceId"
     fun updateRockserver(@Suppress("UNUSED_PARAMETER") url: String, @Suppress("UNUSED_PARAMETER") bearerToken: String) {
         preferences.edit().remove(URL_KEY).remove(TOKEN_KEY).apply()
     }

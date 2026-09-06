@@ -15,6 +15,11 @@
 | `account/KeystoreCredentialStore.kt` | AES-GCM session/profile storage с ключом из Android Keystore |
 | `account/AccountViewModel.kt` | Pairing lifecycle, refresh/logout/revoke и безопасный fallback |
 | `account/AccountScreen.kt` | Читаемый экран подключения телефона, QR/deep link и список устройств |
+| `devicecontrol/DirectoryDtos.kt` | Строгие REST/WebSocket directory DTOs и safe unknown variants |
+| `devicecontrol/DirectoryApi.kt` | Authenticated typed directory REST boundary |
+| `devicecontrol/DirectorySocket.kt` | Bounded native-session controller subscription and reconnect events |
+| `devicecontrol/TargetDirectoryRepository.kt` | Owner-scoped revision store and explicit selection invariant |
+| `devicecontrol/TargetDirectoryViewModel.kt`, `TargetSelector.kt` | Lifecycle bridge and Compose selector without controls |
 | `settings/UnavailableVoiceStationStore.kt` | Локальная память voice-станций с недоступным потоком |
 | `ui/stations/StationsViewModel.kt` | Каталог, фильтры и voice-кандидаты |
 | `ui/stations/StationsScreen.kt` | Compose orchestration каталога и playback entry point |

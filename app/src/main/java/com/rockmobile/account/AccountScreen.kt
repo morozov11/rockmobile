@@ -43,6 +43,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rockmobile.BuildConfig
+import com.rockmobile.devicecontrol.TargetDirectoryViewModel
+import com.rockmobile.devicecontrol.TargetSelector
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -50,13 +52,14 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
-fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> Unit) {
+fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, targetDirectory: TargetDirectoryViewModel, dismiss: () -> Unit) {
     val state = viewModel.state.collectAsStateWithLifecycle().value
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var deviceName by rememberSaveable { mutableStateOf(defaultDeviceDisplayName(Build.MODEL)) }
     var nameError by rememberSaveable { mutableStateOf<String?>(null) }
     var deviceToRevoke by remember { mutableStateOf<AccountDevice?>(null) }
+    val targetState = targetDirectory.state.collectAsStateWithLifecycle().value
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -67,6 +70,9 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
     }
 
     LaunchedEffect(Unit) { viewModel.ensureSessionVisible() }
+    LaunchedEffect(state) {
+        if (state is AccountUiState.Connected) targetDirectory.useCurrentAccount()
+    }
 
     val dismissDialog = { dismiss() }
 
@@ -189,6 +195,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                             }
                         }
                         OutlinedButton(onClick = viewModel::refreshAccount) { Text("Обновить аккаунт") }
+                        TargetSelector(targetState, targetDirectory::refresh, targetDirectory::select)
                         Button(onClick = viewModel::logout) { Text("Выйти на этом телефоне") }
                     }
 

@@ -1,0 +1,37 @@
+---
+description: Keep RockMobile source modular and avoid growing god files
+alwaysApply: true
+---
+
+# RockMobile module boundaries
+
+- Keep every source file focused on one cohesive responsibility. Do not grow a mixed UI,
+  state, networking, persistence, navigation, and test implementation into one large file.
+- When a change adds an independent responsibility, extract it immediately into a clearly
+  named module or feature folder. Preserve existing public APIs and navigation behavior
+  through thin facades or compatibility exports where callers rely on them.
+- Separate API DTO/client code, domain models and validation, state/controllers, UI screens
+  and reusable components, persistence, and tests when they are independently readable and
+  testable. Colocate tests with their feature when a production file becomes hard to scan.
+- Prefer simple data classes/structs and direct composition. Introduce an interface, trait,
+  factory, or generic abstraction only at a real boundary with multiple implementations or
+  a necessary fake; do not add architecture for one implementation.
+- Before adding substantial code to an already large file, inspect callers and nearby
+  features, then choose the smallest coherent extraction. Preserve UI behavior, account
+  ownership, API contracts, error handling, and offline behavior during structural refactors.
+- Add a brief module-level description for a nontrivial feature: responsibility, key
+  invariant, and intentional exclusions. Do not duplicate implementation in comments.
+- Keep an existing source architecture map accurate when module boundaries or recommended
+  reading order materially change; create one only when the project has enough modules to
+  benefit from it.
+
+## JSON and API boundaries
+
+- Do not hand-build JSON strings, maps, trees, or JSON-path parsing in application code.
+  Define strict request/response/event DTOs and use the project's typed serializer.
+- Decode every server payload into a validated typed model at the API boundary. UI, state,
+  and domain code must consume typed values, not raw JSON, dynamic maps, or untyped fields.
+- Model nullable, optional, unknown, and forward-compatible values explicitly. Reject or
+  safely ignore malformed/unknown wire variants at the boundary; never guess missing fields.
+- Hand-written JSON is allowed only in a narrowly scoped test fixture when no typed fixture
+  helper can express an intentionally malformed payload; state that intent in the test.

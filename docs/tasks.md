@@ -1,5 +1,17 @@
 # RockMobile task log
 
+## DC-015 — 2026-09-06 — target selector (complete locally)
+
+- Scope: typed account-owned directory REST/WSS consumption, revision-safe selector and explicit
+  target persistence only; normal inventory/pairing/revoke/radio behaviour remains unchanged.
+- Result: unknown capabilities/messages are ignored safely at the DTO boundary; malformed known
+  payloads are rejected. Revision gaps, resync close and WSS loss reload the directory. No target
+  is inferred or broadcast; unavailable/revoked/missing selections are cleared visibly.
+- Exclusion: DC-016 command dispatch, controls and lifecycle UI are not implemented.
+- Checks: `:app:testDebugUnitTest`, `:app:lintDebug`, `:app:assembleDebug` and `git diff --check`
+  passed with the mandated process-local `JAVA_TOOL_OPTIONS`.
+- Status: DC-015 complete locally. DC-016 remains command/control UI work.
+
 ## RM-011 — 2026-08-30 — durable device-secret client sessions
 
 - Goal: make a paired phone survive access-token expiry and transient session-issuance failures.
