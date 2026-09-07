@@ -1,5 +1,13 @@
 # RockMobile status
 
+## DC-016 controller WebSocket recovery (live acceptance, 2026-09-07)
+
+Re-entering the account dialog now discards its actionable directory view until it reconnects the
+controller socket and reloads the authoritative directory. This prevents a locally stale WebSocket
+object from accepting a send that can no longer reach RockServer; no command is retried. With the
+companion RockCast idle wake-up, a physical paired-phone `Stop` completed as `succeeded` in staging
+in under one second.
+
 ## DC-016 E2E controller registration and debug endpoint (live acceptance, 2026-09-07)
 
 RockMobile no longer submits an empty device runtime snapshot: it is a controller, not a player.

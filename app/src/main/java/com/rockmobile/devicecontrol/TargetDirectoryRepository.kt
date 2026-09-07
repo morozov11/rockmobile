@@ -48,6 +48,7 @@ internal class TargetDirectoryRepository(
     fun start(scope: CoroutineScope, session: ControllerSession) {
         if (this.session?.userId == session.userId && this.session?.deviceId == session.deviceId && socket != null) {
             this.session = session
+            refresh()
             return
         }
         stop()
@@ -65,7 +66,11 @@ internal class TargetDirectoryRepository(
         _state.value = TargetDirectoryState.Inactive
     }
 
-    fun refresh() { reconnectAttempt = 0; scope?.launch { reload(connectAfter = true) } }
+    fun refresh() {
+        reconnectAttempt = 0
+        _state.value = TargetDirectoryState.Loading
+        scope?.launch { reload(connectAfter = true) }
+    }
 
     fun select(targetId: String) {
         val active = session ?: return

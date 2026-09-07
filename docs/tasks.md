@@ -1,5 +1,15 @@
 # RockMobile task log
 
+## DC-016 — controller socket refresh after dialog re-entry (2026-09-07)
+
+- Fixed an E2E timeout where the account dialog retained an object for an already-dead controller
+  WebSocket. Re-entering the dialog now moves the directory into loading and obtains a fresh
+  REST/WSS snapshot before exposing controls; command frames are not retried or broadened.
+- Live result: after the companion RockCast idle wake-up fix, an explicitly selected `Stop`
+  completed in staging as `succeeded` in under one second.
+- Checks: `:app:testDebugUnitTest`, `:app:assembleDebug` and `git diff --check` passed.
+- Status: physical command E2E recovered; the connected debug APK contains the fix.
+
 ## DC-016 E2E controller registration and debug endpoint — 2026-09-07
 
 - Scope: stop publishing a fabricated controller runtime snapshot and add a build-time,

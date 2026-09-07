@@ -88,6 +88,16 @@ class TargetDirectoryRepositoryTest {
         assertEquals(3, transport.getCalls)
     }
 
+    @Test fun sameSessionStart_reconnectsBeforeReusingDirectoryControls() = runTest {
+        val socket = FakeSockets()
+        val transport = QueueTransport(listOf(directory(1, rockCast()), directory(2, rockCast())))
+        val repository = TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(transport)) { "https://server.test" }, socket, MemorySelections(), ioDispatcher = testDispatcher())
+        repository.start(this, session()); runCurrent()
+        repository.start(this, session()); runCurrent()
+        assertEquals(2, socket.connectCalls)
+        assertEquals(2, transport.getCalls)
+    }
+
     @Test fun missingDirectoryScope_bootstrapsControllerSocket() = runTest {
         val socket = FakeSockets()
         val transport = QueueTransport(emptyList(), responseCode = 403)
