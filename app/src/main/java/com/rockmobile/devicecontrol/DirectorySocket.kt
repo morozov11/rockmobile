@@ -30,7 +30,15 @@ internal interface DirectorySocketListener {
 
 /** Bounded authenticated controller connection; all commands use the same native-session lifecycle. */
 internal class OkHttpDirectorySocketFactory(
-    private val http: OkHttpClient = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).build(),
+    // OkHttp applies its default 10 s read timeout to idle WebSocket reads too, but the
+    // control protocol is quiet between 20 s application heartbeats, so a finite read
+    // timeout kills a healthy controller socket before its first heartbeat. Protocol
+    // pings every 15 s keep the stream alive and still detect a dead server within 30 s.
+    private val http: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .pingInterval(15, TimeUnit.SECONDS)
+        .build(),
 ) : DirectorySocketFactory {
     override fun connect(baseUrl: String, accessToken: String, listener: DirectorySocketListener): DirectorySocketConnection {
         val request = Request.Builder().url(controlSocketUrl(baseUrl)).header("Authorization", "Bearer $accessToken").build()

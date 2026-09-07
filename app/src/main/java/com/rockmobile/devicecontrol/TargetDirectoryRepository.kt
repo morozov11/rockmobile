@@ -35,6 +35,7 @@ internal class TargetDirectoryRepository(
     private var session: ControllerSession? = null
     private var scope: CoroutineScope? = null
     private var socket: DirectorySocketConnection? = null
+    private var socketGeneration = 0L
     private var reconnect: Job? = null
     private var revision = 0L
     private var targets = emptyMap<String, ControllerTarget>()
@@ -48,7 +49,7 @@ internal class TargetDirectoryRepository(
     fun start(scope: CoroutineScope, session: ControllerSession) {
         if (this.session?.userId == session.userId && this.session?.deviceId == session.deviceId && socket != null) {
             this.session = session
-            refresh()
+            refresh(replaceSocket = true)
             return
         }
         stop()
@@ -61,15 +62,17 @@ internal class TargetDirectoryRepository(
     fun stop() {
         reconnect?.cancel(); reconnect = null
         socket?.close(); socket = null
-        session = null; scope = null; revision = 0L; targets = emptyMap(); scopes = emptySet(); reconnectAttempt = 0
+        session = null; scope = null; revision = 0L; targets = emptyMap(); scopes = emptySet(); reconnectAttempt = 0; socketGeneration++
         _commands.value = emptyMap(); _receivers.value = emptyList()
         _state.value = TargetDirectoryState.Inactive
     }
 
-    fun refresh() {
+    fun refresh() = refresh(replaceSocket = false)
+
+    private fun refresh(replaceSocket: Boolean) {
         reconnectAttempt = 0
         _state.value = TargetDirectoryState.Loading
-        scope?.launch { reload(connectAfter = true) }
+        scope?.launch { reload(connectAfter = replaceSocket || socket == null) }
     }
 
     fun select(targetId: String) {
@@ -128,11 +131,14 @@ internal class TargetDirectoryRepository(
 
     private fun openSocket(active: ControllerSession) {
         socket?.close()
+        val generation = ++socketGeneration
         socket = socketFactory.connect(activeSessionBaseUrl(), active.accessToken, object : DirectorySocketListener {
             override fun onMessage(message: DirectoryWireMessage) {
                 scope?.launch { handle(message) }
             }
             override fun onClosed(resyncRequired: Boolean) {
+                if (generation != socketGeneration) return
+                socket = null
                 scope?.launch { if (resyncRequired) reload(connectAfter = true) else scheduleReconnect() }
             }
         })
@@ -171,7 +177,7 @@ internal class TargetDirectoryRepository(
 
     private suspend fun applyChange(nextRevision: Long, change: () -> Map<String, ControllerTarget>) {
         if (nextRevision <= revision) return
-        if (nextRevision != revision + 1) { reload(connectAfter = true); return }
+        if (nextRevision != revision + 1) { reload(connectAfter = false); return }
         targets = change(); revision = nextRevision; publish()
     }
 
@@ -212,7 +218,7 @@ internal class TargetDirectoryRepository(
         }
         message.output?.receivers?.mapNotNull(::receiver)?.let { discovered -> _receivers.value = discovered.filter { it.validAt(Instant.now()) } }
         _commands.value += command.commandId to command.copy(phase = CommandPhase.AwaitingState, detail = "Команда завершена; обновляем фактическое состояние.")
-        reload(connectAfter = true)
+        reload(connectAfter = false)
     }
 
     private fun receiver(dto: ChromecastReceiverDto): EphemeralReceiver? = runCatching {

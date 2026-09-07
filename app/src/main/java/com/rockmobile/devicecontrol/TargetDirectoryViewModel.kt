@@ -16,7 +16,9 @@ class TargetDirectoryViewModel internal constructor(
     fun useCurrentAccount() = viewModelScope.launch {
         sessionProvider()?.let { repository.start(viewModelScope, it) } ?: repository.stop()
     }
-    fun refresh() = viewModelScope.launch { sessionProvider()?.let { repository.start(viewModelScope, it); repository.refresh() } }
+    fun refresh() = viewModelScope.launch {
+        sessionProvider()?.let { repository.start(viewModelScope, it) } ?: repository.stop()
+    }
     fun select(targetId: String) = repository.select(targetId)
     fun dispatch(command: RemoteCommand) = repository.dispatch(command, Instant.now())
     override fun onCleared() { repository.stop() }

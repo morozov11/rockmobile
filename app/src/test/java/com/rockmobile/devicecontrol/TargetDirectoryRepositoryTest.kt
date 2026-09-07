@@ -80,11 +80,11 @@ class TargetDirectoryRepositoryTest {
         socket.listener!!.onMessage(DirectoryWireMessage.Upsert(3, player("gap")))
         runCurrent()
         assertEquals(2, transport.getCalls)
-        assertEquals(2, socket.connectCalls)
+        assertEquals(1, socket.connectCalls)
         socket.disconnect()
         advanceTimeBy(100)
         runCurrent()
-        assertEquals(3, socket.connectCalls)
+        assertEquals(2, socket.connectCalls)
         assertEquals(3, transport.getCalls)
     }
 
@@ -150,6 +150,7 @@ class TargetDirectoryRepositoryTest {
         val id = repository.dispatch(RemoteCommand.Play)!!
         socket.listener!!.onMessage(DirectoryWireMessage.CommandResult(id, CommandResultStatus.Succeeded, null, CommandResultOutputDto(stateRevision = 2))); runCurrent()
         assertEquals(CommandPhase.Succeeded, repository.commands.value[id]!!.phase)
+        assertEquals(1, socket.connectCalls)
         val second = repository.dispatch(RemoteCommand.Play)!!
         socket.listener!!.onMessage(DirectoryWireMessage.Removed(3, "rockcast", RemovalReason.Revoked)); runCurrent()
         assertEquals(CommandPhase.Cancelled, repository.commands.value[second]!!.phase)
