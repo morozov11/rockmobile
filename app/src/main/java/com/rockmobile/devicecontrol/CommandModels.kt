@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonClassDiscriminator
 
 /** Typed executable v1 subset: device targets only; display/entity commands deliberately do not exist here. */
 @OptIn(ExperimentalSerializationApi::class)
+@Serializable
 @JsonClassDiscriminator("name")
 sealed interface RemoteCommand {
     val key: String

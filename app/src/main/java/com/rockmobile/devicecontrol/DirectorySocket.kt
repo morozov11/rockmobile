@@ -1,9 +1,11 @@
 package com.rockmobile.devicecontrol
 
 import com.rockmobile.BuildConfig
+import com.rockmobile.account.SessionLog
 import com.rockmobile.data.api.RockserverApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -45,7 +47,11 @@ internal class OkHttpDirectorySocketFactory(
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
                 if (text.toByteArray().size > MAX_FRAME_BYTES) { webSocket.close(1009, "frame_too_large"); return }
-                runCatching { decodeDirectoryMessage(text) }.onSuccess { message ->
+                var frameType = "unknown"
+                runCatching {
+                    frameType = DirectoryJson.codec.decodeFromString<WireHeaderDto>(text).type
+                    decodeDirectoryMessage(text)
+                }.onSuccess { message ->
                     listener.onMessage(message)
                     when (message) {
                         DirectoryWireMessage.Welcome -> webSocket.send(DirectoryJson.codec.encodeToString(register()))
@@ -54,12 +60,12 @@ internal class OkHttpDirectorySocketFactory(
                         }
                         else -> Unit
                     }
-                }.onFailure { webSocket.close(1007, "invalid_message") }
+                }.onFailure { SessionLog.probeOffline("directory frame invalid: $frameType"); webSocket.close(1007, "invalid_message") }
             }
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) { webSocket.close(1003, "binary_not_supported") }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, reason) }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { notifyClosed(reason.contains("directory_resync_required")) }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { notifyClosed(false) }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { SessionLog.probeOffline("directory socket closed: $code $reason"); notifyClosed(reason.contains("directory_resync_required")) }
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { SessionLog.probeOffline("directory socket failed: ${response?.code ?: t.javaClass.simpleName}"); notifyClosed(false) }
         })
         return object : DirectorySocketConnection {
             override fun send(command: DeviceCommandPayloadDto): Boolean = socket?.send(commandFrame(command)) == true
@@ -70,7 +76,7 @@ internal class OkHttpDirectorySocketFactory(
     private fun heartbeatThread(socket: WebSocket) = Thread {
         var sequence = 0L
         while (!Thread.currentThread().isInterrupted) {
-            Thread.sleep(20_000)
+            try { Thread.sleep(20_000) } catch (_: InterruptedException) { Thread.currentThread().interrupt(); break }
             socket.send(DirectoryJson.codec.encodeToString(heartbeat(sequence++)))
         }
     }.apply { isDaemon = true; start() }

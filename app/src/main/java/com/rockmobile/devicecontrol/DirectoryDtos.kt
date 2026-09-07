@@ -6,7 +6,7 @@ import kotlinx.serialization.json.Json
 
 /** Typed wire boundary for the controller directory; raw JSON never leaves this package. */
 internal object DirectoryJson {
-    val codec = Json { ignoreUnknownKeys = true; isLenient = false; explicitNulls = false }
+    val codec = Json { ignoreUnknownKeys = true; isLenient = false; explicitNulls = false; encodeDefaults = true }
 }
 
 @Serializable

@@ -410,7 +410,7 @@ class AccountViewModel(
         val connected = state.value as? AccountUiState.Connected ?: return null
         val credentials = ensureFreshAccessToken()
         ControllerSession(connected.profile.userId, credentials.deviceId, credentials.accessToken)
-    }.getOrNull()
+    }.onFailure(SessionLog::refreshFailed).getOrNull()
 
     override fun onCleared() { pairingJob?.cancel() }
 }

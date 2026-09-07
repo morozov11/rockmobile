@@ -5,6 +5,8 @@ import com.rockmobile.data.api.HttpTransport
 import com.rockmobile.data.api.RockserverApi
 import java.io.Closeable
 import java.io.IOException
+import kotlin.coroutines.ContinuationInterceptor
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -17,6 +19,13 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TargetDirectoryRepositoryTest {
+    @Test fun commandFrame_keepsRequiredProtocolDefaults() {
+        val frame = commandFrame(DeviceCommandPayloadDto("command", DeviceTargetDto("target"), "2026-09-02T12:00:10Z", RemoteCommand.Play))
+        assertTrue(frame.contains("\"protocol_version\":1"))
+        assertTrue(frame.contains("\"message_id\":"))
+        assertTrue(frame.contains("\"sent_at\":"))
+    }
+
     @Test fun typedSnapshot_mapsRockCastAndSafelyIgnoresUnknownCapabilitiesAndMessages() {
         val snapshot = directory(1, rockCast(known = listOf("media.playback", "future.magic")))
         val message = SnapshotMessageDto(1, "message", "directory.snapshot", "2026-09-02T12:00:00Z", SnapshotPayloadDto("event", snapshot))
@@ -65,7 +74,7 @@ class TargetDirectoryRepositoryTest {
     @Test fun revisionGap_reloadsSnapshotAndSocketLossReconnectsOnce() = runTest {
         val socket = FakeSockets()
         val transport = QueueTransport(listOf(directory(1, rockCast()), directory(4, player("new"))))
-        val repository = TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(transport)) { "https://server.test" }, socket, MemorySelections(), 100)
+        val repository = TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(transport)) { "https://server.test" }, socket, MemorySelections(), 100, testDispatcher())
         repository.start(this, session())
         runCurrent()
         socket.listener!!.onMessage(DirectoryWireMessage.Upsert(3, player("gap")))
@@ -79,15 +88,17 @@ class TargetDirectoryRepositoryTest {
         assertEquals(3, transport.getCalls)
     }
 
-    @Test fun missingDirectoryScope_isNonBlockingUnavailableState() = runTest {
+    @Test fun missingDirectoryScope_bootstrapsControllerSocket() = runTest {
         val socket = FakeSockets()
         val transport = QueueTransport(emptyList(), responseCode = 403)
-        val repository = TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(transport)) { "https://server.test" }, socket, MemorySelections())
+        val repository = TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(transport)) { "https://server.test" }, socket, MemorySelections(), ioDispatcher = testDispatcher())
         repository.start(this, session())
         runCurrent()
-        val state = repository.state.value as TargetDirectoryState.Unavailable
-        assertTrue(state.scopeMissing)
-        assertEquals(0, socket.connectCalls)
+        assertEquals(TargetDirectoryState.Loading, repository.state.value)
+        assertEquals(1, socket.connectCalls)
+        socket.listener!!.onMessage(DirectoryWireMessage.Snapshot(directory(1, rockCast())))
+        runCurrent()
+        assertTrue(repository.state.value is TargetDirectoryState.Available)
     }
 
     @Test fun knownCapabilities_mapOnlyAdvertisedControls_andUnknownStaysInvisible() {
@@ -124,7 +135,7 @@ class TargetDirectoryRepositoryTest {
         val socket = FakeSockets()
         val first = directory(1, rockCast(known = listOf("media.playback")), scopes = listOf("device.directory.read", "media.control"))
         val refreshed = directory(2, rockCast(known = listOf("media.playback")), scopes = listOf("device.directory.read", "media.control"))
-        val repository = TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(QueueTransport(listOf(first, refreshed))), { "https://server.test" }), socket, MemorySelections())
+        val repository = TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(QueueTransport(listOf(first, refreshed))), { "https://server.test" }), socket, MemorySelections(), ioDispatcher = testDispatcher())
         repository.start(this, session()); runCurrent(); repository.select("rockcast")
         val id = repository.dispatch(RemoteCommand.Play)!!
         socket.listener!!.onMessage(DirectoryWireMessage.CommandResult(id, CommandResultStatus.Succeeded, null, CommandResultOutputDto(stateRevision = 2))); runCurrent()
@@ -134,8 +145,10 @@ class TargetDirectoryRepositoryTest {
         assertEquals(CommandPhase.Cancelled, repository.commands.value[second]!!.phase)
     }
 
-    private fun repository(socket: FakeSockets, selections: MemorySelections, vararg snapshots: DirectoryDto): TargetDirectoryRepository =
-        TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(QueueTransport(snapshots.toList()))) { "https://server.test" }, socket, selections, 100)
+    private fun kotlinx.coroutines.test.TestScope.repository(socket: FakeSockets, selections: MemorySelections, vararg snapshots: DirectoryDto): TargetDirectoryRepository =
+        TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(QueueTransport(snapshots.toList()))) { "https://server.test" }, socket, selections, 100, testDispatcher())
+
+    private fun kotlinx.coroutines.test.TestScope.testDispatcher(): CoroutineDispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
 
     private fun session() = ControllerSession("owner", "controller", "a".repeat(16))
     private fun directory(revision: Long, vararg devices: DirectoryEntryDto, scopes: List<String> = listOf("device.directory.read")) = DirectoryDto(1, "2026-09-02T12:00:00Z", revision, scopes, devices.toList())

@@ -1,6 +1,6 @@
 # RockMobile task log
 
-## DC-016 E2E debug endpoint and controller registration — 2026-09-07
+## DC-016 E2E controller registration and debug endpoint — 2026-09-07
 
 - Scope: stop publishing a fabricated controller runtime snapshot and add a build-time,
   HTTPS-only debug endpoint override. Release builds retain the fixed production URL; the value is
@@ -8,11 +8,19 @@
 - Result: the controller starts heartbeat after registration without asserting nonexistent player
   state. A debug APK may be built with `-ProckmobileDevServerUrl=https://…`; blank, HTTP and all
   release values resolve to the production endpoint.
-- Checks: `:app:testDebugUnitTest` passed. RockServer lifecycle verification is recorded in its
-  repository; no APK install, deployment, pairing or hardware E2E was performed.
-- Status: local implementation complete; DC-016 still awaits live acceptance.
+- Live result: after a debug APK install with the HTTPS-only build-time override, the paired
+  Android controller and paired RockCast appeared online in the authoritative directory. An
+  explicitly selected RockCast accepted a physical `Stop` command; the phone reported terminal
+  state confirmation and the staging command lifecycle was recorded as `succeeded`.
+- Blockers fixed during the run: directory REST was moved off the main thread; a controller whose
+  initial directory scope is granted only by WSS registration now bootstraps that socket; command
+  envelopes retain required protocol defaults; and the sealed command serializer is registered.
+  Socket-heartbeat interruption is handled as normal shutdown.
+- Checks: `:app:testDebugUnitTest` (102 tests), `:app:assembleDebug` and `git diff --check`
+  passed.
+- Status: live acceptance complete.
 
-## DC-016 — 2026-09-07 — capability-driven remote-player controls (local implementation; live E2E pending)
+## DC-016 — 2026-09-07 — capability-driven remote-player controls (live E2E complete)
 
 - Scope: typed device-only commands over the existing controller WSS lifecycle, selected-target
   validation, capability-derived Compose controls and command correlation. Local phone playback,
@@ -30,9 +38,9 @@
 - Checks: `:app:testDebugUnitTest`, `:app:lintDebug` (0 errors; pre-existing warnings) and
   `:app:assembleDebug` passed; `git diff --check` passed. Fakes cover capability mapping, unknown
   capabilities, explicit/scope-gated dispatch, target removal, lifecycle and duplicate dispatch.
-- Status: local acceptance evidence exists, but DC-016 is **not marked complete** until a live
-  Rockmobile → RockServer → RockCast run confirms the canonical directory state refresh and
-  physical command result. DC-017+ remains ESP32-only and outside this repository change.
+- Status: a live RockMobile → RockServer → RockCast run confirmed directory refresh and a
+  terminal physical command result. DC-017+ remains ESP32-only and outside this repository
+  change.
 
 ## DC-015 — 2026-09-06 — target selector (complete locally)
 

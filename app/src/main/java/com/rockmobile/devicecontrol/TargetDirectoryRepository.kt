@@ -1,15 +1,19 @@
 package com.rockmobile.devicecontrol
 
+import com.rockmobile.account.SessionLog
 import com.rockmobile.data.api.ApiError
 import java.time.Instant
 import java.net.URI
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.min
 
 interface TargetSelectionStore {
@@ -24,6 +28,7 @@ internal class TargetDirectoryRepository(
     private val socketFactory: DirectorySocketFactory,
     private val selections: TargetSelectionStore,
     private val reconnectDelayMs: Long = 1_000,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val _state = MutableStateFlow<TargetDirectoryState>(TargetDirectoryState.Inactive)
     val state: StateFlow<TargetDirectoryState> = _state.asStateFlow()
@@ -99,10 +104,15 @@ internal class TargetDirectoryRepository(
     private suspend fun reload(connectAfter: Boolean) {
         val active = session ?: return
         try {
-            applySnapshot(api.load(active.accessToken))
+            applySnapshot(withContext(ioDispatcher) { api.load(active.accessToken) })
             if (connectAfter) openSocket(active)
         } catch (error: Exception) {
             val scopeMissing = error is ApiError && error.statusCode == 403
+            if (!scopeMissing) SessionLog.refreshFailed(error)
+            if (scopeMissing && connectAfter) {
+                openSocket(active)
+                return
+            }
             _state.value = TargetDirectoryState.Unavailable(
                 if (scopeMissing) "Для выбора устройства нет разрешения directory." else "Список устройств управления временно недоступен.",
                 scopeMissing,
