@@ -2,6 +2,7 @@ package com.rockmobile.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.rockmobile.BuildConfig
 
 /** Central location for the fixed public server URL; account credentials never live here. */
 class SettingsRepository(context: Context) : com.rockmobile.devicecontrol.TargetSelectionStore {
@@ -11,7 +12,8 @@ class SettingsRepository(context: Context) : com.rockmobile.devicecontrol.Target
         scrubLegacyRockserverDefaults(preferences)
     }
 
-    fun rockserverUrl(): String = PRODUCTION_BASE_URL
+    /** A URL may be baked into a debug APK only; release builds always use production. */
+    fun rockserverUrl(): String = resolvedRockserverUrl(BuildConfig.DEBUG, BuildConfig.DEBUG_ROCKSERVER_URL)
     /** Anonymous catalogue/voice routes do not need a bearer token. Native account tokens use KeystoreCredentialStore. */
     fun bearerToken(): String = ""
 
@@ -64,6 +66,9 @@ internal fun scrubLegacyRockserverDefaults(preferences: SharedPreferences) {
 internal fun migratedStoredRockserverUrl(stored: String): String? {
     return stored.takeIf { it.isNotEmpty() }?.let { SettingsRepository.PRODUCTION_BASE_URL }
 }
+
+internal fun resolvedRockserverUrl(isDebug: Boolean, debugUrl: String): String =
+    debugUrl.trim().trimEnd('/').takeIf { isDebug && it.startsWith("https://") } ?: SettingsRepository.PRODUCTION_BASE_URL
 
 /** Clears the shared bootstrap token; otherwise null (no change). */
 internal fun migratedStoredBearerToken(stored: String): String? =

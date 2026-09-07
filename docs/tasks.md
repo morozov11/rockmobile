@@ -1,5 +1,39 @@
 # RockMobile task log
 
+## DC-016 E2E debug endpoint and controller registration — 2026-09-07
+
+- Scope: stop publishing a fabricated controller runtime snapshot and add a build-time,
+  HTTPS-only debug endpoint override. Release builds retain the fixed production URL; the value is
+  not persisted, displayed, logged or accepted over HTTP.
+- Result: the controller starts heartbeat after registration without asserting nonexistent player
+  state. A debug APK may be built with `-ProckmobileDevServerUrl=https://…`; blank, HTTP and all
+  release values resolve to the production endpoint.
+- Checks: `:app:testDebugUnitTest` passed. RockServer lifecycle verification is recorded in its
+  repository; no APK install, deployment, pairing or hardware E2E was performed.
+- Status: local implementation complete; DC-016 still awaits live acceptance.
+
+## DC-016 — 2026-09-07 — capability-driven remote-player controls (local implementation; live E2E pending)
+
+- Scope: typed device-only commands over the existing controller WSS lifecycle, selected-target
+  validation, capability-derived Compose controls and command correlation. Local phone playback,
+  pairing, account inventory and DC-015 selection behaviour remain separate.
+- Result: playback, volume/mute, Chromecast discovery/connect/disconnect and relay actions/modes
+  are rendered only when the current selected fresh online player advertises them and the directory
+  grants `media.control`. Unsupported/unknown capabilities stay invisible. Every dispatched frame
+  has one selected `device_id`, UUID command id and a 10-second deadline; no identity fields or
+  broad targets are sent.
+- Lifecycle: pending/received/accepted never imply success. Terminal success waits for a refreshed
+  authoritative directory snapshot; failed, expired, target removal and WSS send loss remain
+  visible errors. Equivalent in-flight commands are disabled and never auto-retried with a new id.
+  Chromecast receivers are typed ephemeral handles filtered by `expires_at`; relay modes are the
+  advertised allowlist.
+- Checks: `:app:testDebugUnitTest`, `:app:lintDebug` (0 errors; pre-existing warnings) and
+  `:app:assembleDebug` passed; `git diff --check` passed. Fakes cover capability mapping, unknown
+  capabilities, explicit/scope-gated dispatch, target removal, lifecycle and duplicate dispatch.
+- Status: local acceptance evidence exists, but DC-016 is **not marked complete** until a live
+  Rockmobile → RockServer → RockCast run confirms the canonical directory state refresh and
+  physical command result. DC-017+ remains ESP32-only and outside this repository change.
+
 ## DC-015 — 2026-09-06 — target selector (complete locally)
 
 - Scope: typed account-owned directory REST/WSS consumption, revision-safe selector and explicit

@@ -90,16 +90,65 @@ class TargetDirectoryRepositoryTest {
         assertEquals(0, socket.connectCalls)
     }
 
+    @Test fun knownCapabilities_mapOnlyAdvertisedControls_andUnknownStaysInvisible() {
+        val target = player("rockcast", known = listOf("media.playback", "media.volume", "media.chromecast", "media.relay", "future.magic"))
+            .copy(capabilities = CapabilitiesDto(1, listOf(
+                capability("media.playback"), capability("media.volume"),
+                CapabilityDto("media.chromecast", 1, actions = listOf("discover", "connect"), discoveryTtlSeconds = 60),
+                CapabilityDto("media.relay", 1, actions = listOf("start", "set_mode"), modes = listOf("local")), CapabilityDto("future.magic", 1),
+            )))
+            .toTarget()
+        assertEquals(setOf(KnownCapability.Playback, KnownCapability.Volume, KnownCapability.Chromecast, KnownCapability.Relay), target.knownCapabilities)
+        assertEquals(setOf(PlaybackAction.Play, PlaybackAction.Pause), target.capability<ControlCapability.Playback>()!!.actions)
+        assertEquals(setOf("local"), target.capability<ControlCapability.Relay>()!!.modes)
+    }
+
+    @Test fun dispatch_isExplicitScopedAndDeduplicated_thenAcceptedIsNotSuccess() = runTest {
+        val socket = FakeSockets()
+        val snapshot = directory(1, rockCast(known = listOf("media.playback")), scopes = listOf("device.directory.read", "media.control"))
+        val repository = repository(socket, MemorySelections(), snapshot)
+        repository.start(this, session()); runCurrent()
+        assertEquals(null, repository.dispatch(RemoteCommand.Play))
+        repository.select("rockcast")
+        val id = repository.dispatch(RemoteCommand.Play, java.time.Instant.parse("2026-09-02T12:00:00Z"))!!
+        assertEquals(null, repository.dispatch(RemoteCommand.Play, java.time.Instant.parse("2026-09-02T12:00:00Z")))
+        assertEquals(1, socket.sent.size)
+        assertEquals("rockcast", socket.sent.single().target.deviceId)
+        assertEquals(CommandPhase.Pending, repository.commands.value[id]!!.phase)
+        socket.listener!!.onMessage(DirectoryWireMessage.CommandAccepted(id)); runCurrent()
+        assertEquals(CommandPhase.Accepted, repository.commands.value[id]!!.phase)
+        assertFalse(repository.commands.value[id]!!.phase == CommandPhase.Succeeded)
+    }
+
+    @Test fun terminalSuccess_waitsForRefreshedDirectory_andRemovalCancels() = runTest {
+        val socket = FakeSockets()
+        val first = directory(1, rockCast(known = listOf("media.playback")), scopes = listOf("device.directory.read", "media.control"))
+        val refreshed = directory(2, rockCast(known = listOf("media.playback")), scopes = listOf("device.directory.read", "media.control"))
+        val repository = TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(QueueTransport(listOf(first, refreshed))), { "https://server.test" }), socket, MemorySelections())
+        repository.start(this, session()); runCurrent(); repository.select("rockcast")
+        val id = repository.dispatch(RemoteCommand.Play)!!
+        socket.listener!!.onMessage(DirectoryWireMessage.CommandResult(id, CommandResultStatus.Succeeded, null, CommandResultOutputDto(stateRevision = 2))); runCurrent()
+        assertEquals(CommandPhase.Succeeded, repository.commands.value[id]!!.phase)
+        val second = repository.dispatch(RemoteCommand.Play)!!
+        socket.listener!!.onMessage(DirectoryWireMessage.Removed(3, "rockcast", RemovalReason.Revoked)); runCurrent()
+        assertEquals(CommandPhase.Cancelled, repository.commands.value[second]!!.phase)
+    }
+
     private fun repository(socket: FakeSockets, selections: MemorySelections, vararg snapshots: DirectoryDto): TargetDirectoryRepository =
         TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(QueueTransport(snapshots.toList()))) { "https://server.test" }, socket, selections, 100)
 
     private fun session() = ControllerSession("owner", "controller", "a".repeat(16))
-    private fun directory(revision: Long, vararg devices: DirectoryEntryDto) = DirectoryDto(1, "2026-09-02T12:00:00Z", revision, listOf("device.directory.read"), devices.toList())
+    private fun directory(revision: Long, vararg devices: DirectoryEntryDto, scopes: List<String> = listOf("device.directory.read")) = DirectoryDto(1, "2026-09-02T12:00:00Z", revision, scopes, devices.toList())
     private fun rockCast(known: List<String> = listOf("media.playback")) = player("rockcast", known = known, name = "Living room RockCast")
     private fun player(id: String, presence: String = "online", freshness: String = "fresh", known: List<String> = emptyList(), name: String = id) = DirectoryEntryDto(
-        id, name, "rockcast", listOf("player"), CapabilitiesDto(1, known.map { CapabilityDto(it, 1) }),
+        id, name, "rockcast", listOf("player"), CapabilitiesDto(1, known.map { capability(it) }),
         PresenceDto(presence, null, if (presence == "offline") "transport_lost" else null), FreshnessDto(freshness),
     )
+    private fun capability(name: String) = when (name) {
+        "media.playback" -> CapabilityDto(name, 1, actions = listOf("play", "pause"))
+        "media.volume" -> CapabilityDto(name, 1, minimum = 0, maximum = 100, step = 5, mute = true)
+        else -> CapabilityDto(name, 1)
+    }
 
     private class QueueTransport(private val snapshots: List<DirectoryDto>, private val responseCode: Int = 200) : HttpTransport {
         var getCalls = 0
@@ -113,9 +162,13 @@ class TargetDirectoryRepositoryTest {
     private class FakeSockets : DirectorySocketFactory {
         var connectCalls = 0
         var listener: DirectorySocketListener? = null
-        override fun connect(baseUrl: String, accessToken: String, listener: DirectorySocketListener): Closeable {
+        val sent = mutableListOf<DeviceCommandPayloadDto>()
+        override fun connect(baseUrl: String, accessToken: String, listener: DirectorySocketListener): DirectorySocketConnection {
             connectCalls++; this.listener = listener
-            return Closeable { }
+            return object : DirectorySocketConnection {
+                override fun send(command: DeviceCommandPayloadDto): Boolean { sent += command; return true }
+                override fun close() = Unit
+            }
         }
         fun disconnect() { listener?.onClosed(false) }
     }

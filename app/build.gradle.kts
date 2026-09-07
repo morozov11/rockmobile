@@ -18,6 +18,7 @@ android {
         versionCode = 7
         versionName = "0.1.6"
         buildConfigField("String", "BUILD_REVISION", "\"${providers.exec { commandLine("git", "rev-parse", "--short=7", "HEAD") }.standardOutput.asText.get().trim()}\"")
+        buildConfigField("String", "DEBUG_ROCKSERVER_URL", "\"\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -45,6 +46,11 @@ android {
         debug {
             // Same cert as release so Digital Asset Links / passkeys match assetlinks.json.
             signingConfig = signingConfigs.getByName("release")
+            val debugServerUrl = providers.gradleProperty("rockmobileDevServerUrl").orNull?.trim()?.trimEnd('/').orEmpty()
+            require(debugServerUrl.isEmpty() || debugServerUrl.startsWith("https://")) {
+                "rockmobileDevServerUrl must use HTTPS and must not include credentials"
+            }
+            buildConfigField("String", "DEBUG_ROCKSERVER_URL", "\"$debugServerUrl\"")
         }
         release {
             isMinifyEnabled = false

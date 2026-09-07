@@ -1,5 +1,30 @@
 # RockMobile status
 
+## DC-016 E2E controller registration and debug endpoint (local implementation, 2026-09-07)
+
+RockMobile no longer submits an empty device runtime snapshot: it is a controller, not a player.
+The corresponding RockServer lifecycle gate now permits controller-only heartbeats while retaining
+the full-state requirement for player and hybrid roles. Debug APKs alone may receive an HTTPS
+RockServer URL at build time through `rockmobileDevServerUrl`; release builds and invalid/HTTP
+values always use the production endpoint. No URL, token or credential is stored or logged. This
+removes the local transport blockers but does not claim deployment, pairing or hardware E2E.
+
+## DC-016 capability-driven remote controls (local implementation, 2026-09-07)
+
+The account dialog now exposes remote-player controls only after the DC-015 explicit selection is
+fresh, online, player-scoped and authorized by `media.control`. Typed capability variants govern
+the visible playback, volume/mute, Chromecast and relay controls; unknown variants do not leave
+the API boundary. Commands use only the selected device target, a generated command UUID and a
+bounded deadline through the existing controller WSS connection. The client tracks received,
+accepted and terminal frames by command UUID, disables equivalent in-flight actions, never
+auto-retries under a new UUID, and waits for a refreshed directory snapshot before reporting a
+successful result. Receiver identifiers stay player-local and expire at their server deadline.
+
+Local fake transport tests, debug unit tests, lint (0 errors) and a debug APK build pass. A live
+Rockmobile → RockServer → RockCast server/hardware environment was not available, so end-to-end
+command execution and factual playback/volume/output state have not been claimed. DC-016 remains
+pending that acceptance; DC-017+ is not part of RockMobile.
+
 ## DC-015 target selector (complete locally, 2026-09-06)
 
 RockMobile now has an owner-scoped device-control directory selector inside the existing account

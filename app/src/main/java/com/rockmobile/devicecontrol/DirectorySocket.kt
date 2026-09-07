@@ -18,18 +18,19 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal interface DirectorySocketFactory {
-    fun connect(baseUrl: String, accessToken: String, listener: DirectorySocketListener): Closeable
+    fun connect(baseUrl: String, accessToken: String, listener: DirectorySocketListener): DirectorySocketConnection
 }
+internal interface DirectorySocketConnection : Closeable { fun send(command: DeviceCommandPayloadDto): Boolean }
 internal interface DirectorySocketListener {
     fun onMessage(message: DirectoryWireMessage)
     fun onClosed(resyncRequired: Boolean)
 }
 
-/** Bounded authenticated controller connection. It only subscribes; it sends no device command. */
+/** Bounded authenticated controller connection; all commands use the same native-session lifecycle. */
 internal class OkHttpDirectorySocketFactory(
     private val http: OkHttpClient = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).build(),
 ) : DirectorySocketFactory {
-    override fun connect(baseUrl: String, accessToken: String, listener: DirectorySocketListener): Closeable {
+    override fun connect(baseUrl: String, accessToken: String, listener: DirectorySocketListener): DirectorySocketConnection {
         val request = Request.Builder().url(controlSocketUrl(baseUrl)).header("Authorization", "Bearer $accessToken").build()
         var socket: WebSocket? = null
         var closed = false
@@ -46,26 +47,24 @@ internal class OkHttpDirectorySocketFactory(
                 if (text.toByteArray().size > MAX_FRAME_BYTES) { webSocket.close(1009, "frame_too_large"); return }
                 runCatching { decodeDirectoryMessage(text) }.onSuccess { message ->
                     listener.onMessage(message)
-                    if (message is DirectoryWireMessage.IgnoredUnknown) return@onSuccess
-                    if (message is DirectoryWireMessage.Snapshot || message is DirectoryWireMessage.Upsert || message is DirectoryWireMessage.Removed) return@onSuccess
-                }.onFailure { webSocket.close(1007, "invalid_message") }
-                // Registration messages are intentionally decoded as a typed header, then answered below.
-                runCatching { DirectoryJson.codec.decodeFromString<WireHeaderDto>(text) }.getOrNull()?.let { header ->
-                    when (header.type) {
-                        "protocol.welcome" -> webSocket.send(DirectoryJson.codec.encodeToString(register()))
-                        "device.registered" -> if (heartbeat == null) {
-                            webSocket.send(DirectoryJson.codec.encodeToString(stateFull()))
+                    when (message) {
+                        DirectoryWireMessage.Welcome -> webSocket.send(DirectoryJson.codec.encodeToString(register()))
+                        DirectoryWireMessage.Registered -> if (heartbeat == null) {
                             heartbeat = heartbeatThread(webSocket)
                         }
+                        else -> Unit
                     }
-                }
+                }.onFailure { webSocket.close(1007, "invalid_message") }
             }
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) { webSocket.close(1003, "binary_not_supported") }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, reason) }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { notifyClosed(reason.contains("directory_resync_required")) }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { notifyClosed(false) }
         })
-        return Closeable { closed = true; heartbeat?.interrupt(); socket?.close(1000, "selector_closed") }
+        return object : DirectorySocketConnection {
+            override fun send(command: DeviceCommandPayloadDto): Boolean = socket?.send(commandFrame(command)) == true
+            override fun close() { closed = true; heartbeat?.interrupt(); socket?.close(1000, "selector_closed") }
+        }
     }
 
     private fun heartbeatThread(socket: WebSocket) = Thread {
@@ -101,17 +100,13 @@ internal class OkHttpDirectorySocketFactory(
 )
 @Serializable private data class EmptyCapabilities(val revision: Long = 1, val items: List<String> = emptyList())
 @Serializable private data class HeartbeatPayload(val sequence: Long)
-@Serializable private data class DeviceStateFullPayload(val snapshot: EmptyStateSnapshot = EmptyStateSnapshot())
-@Serializable private data class EmptyStateSnapshot(
-    @SerialName("state_revision") val revision: Long = 1,
-    @SerialName("observed_at") val observedAt: String = Instant.now().toString(),
-    val state: EmptyRuntimeState = EmptyRuntimeState(),
-)
-@Serializable private data class EmptyRuntimeState(val unused: String? = null)
 private fun hello() = OutgoingEnvelope(type = "protocol.hello", payload = HelloPayload())
 private fun register() = OutgoingEnvelope(type = "device.register", payload = RegisterPayload())
 private fun heartbeat(sequence: Long) = OutgoingEnvelope(type = "device.heartbeat", payload = HeartbeatPayload(sequence))
-private fun stateFull() = OutgoingEnvelope(type = "device.state_full", payload = DeviceStateFullPayload())
+
+/** Kept typed for wire assertions; it contains no controller identity or untyped payload. */
+internal fun commandFrame(command: DeviceCommandPayloadDto): String =
+    DirectoryJson.codec.encodeToString(OutgoingEnvelope(type = "device.command", payload = command))
 
 internal fun controlSocketUrl(baseUrl: String): String =
     baseUrl.trim().trimEnd('/').replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "${RockserverApi.API_V1_PREFIX}/devices/connect"

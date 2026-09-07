@@ -1,7 +1,8 @@
 package com.rockmobile.devicecontrol
 
 import com.rockmobile.data.api.ApiError
-import java.io.Closeable
+import java.time.Instant
+import java.net.URI
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -28,11 +29,16 @@ internal class TargetDirectoryRepository(
     val state: StateFlow<TargetDirectoryState> = _state.asStateFlow()
     private var session: ControllerSession? = null
     private var scope: CoroutineScope? = null
-    private var socket: Closeable? = null
+    private var socket: DirectorySocketConnection? = null
     private var reconnect: Job? = null
     private var revision = 0L
     private var targets = emptyMap<String, ControllerTarget>()
+    private var scopes = emptySet<String>()
     private var reconnectAttempt = 0
+    private val _commands = MutableStateFlow<Map<String, CommandLifecycle>>(emptyMap())
+    val commands: StateFlow<Map<String, CommandLifecycle>> = _commands.asStateFlow()
+    private val _receivers = MutableStateFlow<List<EphemeralReceiver>>(emptyList())
+    val receivers: StateFlow<List<EphemeralReceiver>> = _receivers.asStateFlow()
 
     fun start(scope: CoroutineScope, session: ControllerSession) {
         if (this.session?.userId == session.userId && this.session?.deviceId == session.deviceId && socket != null) {
@@ -49,7 +55,8 @@ internal class TargetDirectoryRepository(
     fun stop() {
         reconnect?.cancel(); reconnect = null
         socket?.close(); socket = null
-        session = null; scope = null; revision = 0L; targets = emptyMap(); reconnectAttempt = 0
+        session = null; scope = null; revision = 0L; targets = emptyMap(); scopes = emptySet(); reconnectAttempt = 0
+        _commands.value = emptyMap(); _receivers.value = emptyList()
         _state.value = TargetDirectoryState.Inactive
     }
 
@@ -64,6 +71,29 @@ internal class TargetDirectoryRepository(
         }
         selections.save(active.userId, active.deviceId, target.id)
         publish()
+    }
+
+    /** Refuses implicit, stale, unauthorized and duplicate dispatch before any frame leaves the phone. */
+    fun dispatch(body: RemoteCommand, now: Instant = Instant.now()): String? {
+        val active = session ?: return null
+        val selected = currentSelected() ?: run { publish("Выберите доступное устройство явно."); return null }
+        if (!selected.usable || "media.control" !in scopes) { publish("Управление этим устройством сейчас недоступно."); return null }
+        if (!commandAllowed(selected, body, now)) { publish("Действие не поддерживается выбранным устройством."); return null }
+        if (_commands.value.values.any { it.targetId == selected.id && it.actionKey == body.key && it.inFlight }) return null
+        val payload = newCommand(selected.id, body, now)
+        val lifecycle = CommandLifecycle(payload.commandId, selected.id, body.key, CommandPhase.Pending)
+        _commands.value += payload.commandId to lifecycle
+        if (socket?.send(payload) != true) {
+            _commands.value += payload.commandId to lifecycle.copy(phase = CommandPhase.Failed, detail = "Соединение с сервером потеряно.")
+            return null
+        }
+        scope?.launch {
+            delay(10_000)
+            _commands.value[payload.commandId]?.takeIf { it.inFlight }?.let {
+                _commands.value += payload.commandId to it.copy(phase = CommandPhase.Expired, detail = "Время ожидания команды истекло.")
+            }
+        }
+        return payload.commandId
     }
 
     private suspend fun reload(connectAfter: Boolean) {
@@ -99,7 +129,15 @@ internal class TargetDirectoryRepository(
     private suspend fun handle(message: DirectoryWireMessage) = when (message) {
         is DirectoryWireMessage.Snapshot -> applySnapshot(message.directory, resetReconnect = true)
         is DirectoryWireMessage.Upsert -> applyChange(message.revision) { targets + (message.device.toTarget().id to message.device.toTarget()) }
-        is DirectoryWireMessage.Removed -> applyChange(message.revision) { targets - message.deviceId }
+        is DirectoryWireMessage.Removed -> {
+            cancelTargetCommands(message.deviceId, "Выбранное устройство удалено или доступ отозван.")
+            applyChange(message.revision) { targets - message.deviceId }
+        }
+        is DirectoryWireMessage.CommandReceived -> updateCommand(message.commandId) { it.copy(phase = CommandPhase.Received, detail = if (message.duplicate) "Сервер повторно подтвердил ту же команду." else null) }
+        is DirectoryWireMessage.CommandAccepted -> updateCommand(message.commandId) { it.copy(phase = CommandPhase.Accepted) }
+        is DirectoryWireMessage.CommandResult -> handleResult(message)
+        is DirectoryWireMessage.CommandError -> message.commandId?.let { id -> updateCommand(id) { it.copy(phase = CommandPhase.Failed, detail = message.error.message) } }
+        DirectoryWireMessage.Welcome, DirectoryWireMessage.Registered -> Unit
         DirectoryWireMessage.ResyncRequired -> reload(connectAfter = true)
         DirectoryWireMessage.IgnoredUnknown -> Unit
     }
@@ -107,7 +145,11 @@ internal class TargetDirectoryRepository(
     private suspend fun applySnapshot(directory: DirectoryDto, resetReconnect: Boolean = false) {
         require(directory.protocolVersion == 1 && directory.revision >= 1 && directory.devices.size <= 50) { "Invalid snapshot" }
         revision = directory.revision
+        scopes = directory.grantedScopes.toSet()
         targets = directory.devices.map { it.toTarget() }.associateBy(ControllerTarget::id)
+        _commands.value.values.filter { it.phase == CommandPhase.AwaitingState }.forEach { command ->
+            if (targets[command.targetId]?.usable == true) _commands.value += command.commandId to command.copy(phase = CommandPhase.Succeeded)
+        }
         if (resetReconnect) reconnectAttempt = 0
         publish()
     }
@@ -124,7 +166,7 @@ internal class TargetDirectoryRepository(
         val selected = saved?.takeIf { targets[it]?.usable == true }
         if (saved != null && selected == null) selections.clear(active.userId, active.deviceId)
         val invalidation = if (saved != null && selected == null) "Выбранное устройство больше недоступно. Выберите другое явно." else notice
-        _state.value = TargetDirectoryState.Available(targets.values.sortedBy { it.name }, selected, invalidation)
+        _state.value = TargetDirectoryState.Available(targets.values.sortedBy { it.name }, selected, scopes, invalidation)
     }
 
     private fun scheduleReconnect() {
@@ -136,4 +178,60 @@ internal class TargetDirectoryRepository(
             reload(connectAfter = true)
         }
     }
+
+    private fun currentSelected(): ControllerTarget? = session?.let { active ->
+        selections.load(active.userId, active.deviceId)?.let(targets::get)
+    }
+
+    private fun updateCommand(commandId: String, update: (CommandLifecycle) -> CommandLifecycle) {
+        _commands.value[commandId]?.takeIf { !it.phase.terminal }?.let { _commands.value += commandId to update(it) }
+    }
+
+    private suspend fun handleResult(message: DirectoryWireMessage.CommandResult) {
+        val command = _commands.value[message.commandId] ?: return
+        if (command.phase.terminal) return
+        if (message.status == CommandResultStatus.Failed) {
+            _commands.value += command.commandId to command.copy(phase = CommandPhase.Failed, detail = message.error?.message ?: "Команда отклонена сервером.")
+            reload(connectAfter = true)
+            return
+        }
+        message.output?.receivers?.mapNotNull(::receiver)?.let { discovered -> _receivers.value = discovered.filter { it.validAt(Instant.now()) } }
+        _commands.value += command.commandId to command.copy(phase = CommandPhase.AwaitingState, detail = "Команда завершена; обновляем фактическое состояние.")
+        reload(connectAfter = true)
+    }
+
+    private fun receiver(dto: ChromecastReceiverDto): EphemeralReceiver? = runCatching {
+        EphemeralReceiver(dto.receiverId, dto.displayName, Instant.parse(dto.expiresAt)).takeIf { it.receiverId.isNotBlank() && it.displayName.isNotBlank() }
+    }.getOrNull()
+
+    private fun cancelTargetCommands(targetId: String, detail: String) {
+        _commands.value.filterValues { it.targetId == targetId && it.inFlight }.forEach { (id, command) ->
+            _commands.value += id to command.copy(phase = CommandPhase.Cancelled, detail = detail)
+        }
+    }
+
+    private fun commandAllowed(target: ControllerTarget, body: RemoteCommand, now: Instant): Boolean = when (body) {
+        RemoteCommand.Play -> target.capability<ControlCapability.Playback>()?.actions?.contains(PlaybackAction.Play) == true
+        RemoteCommand.Pause -> target.capability<ControlCapability.Playback>()?.actions?.contains(PlaybackAction.Pause) == true
+        RemoteCommand.Stop -> target.capability<ControlCapability.Playback>()?.actions?.contains(PlaybackAction.Stop) == true
+        RemoteCommand.Next -> target.capability<ControlCapability.Playback>()?.actions?.contains(PlaybackAction.Next) == true
+        RemoteCommand.Previous -> target.capability<ControlCapability.Playback>()?.actions?.contains(PlaybackAction.Previous) == true
+        is RemoteCommand.PlayStation -> target.capability<ControlCapability.Station>()?.sources?.contains(StationSource.RockserverCatalog) == true && body.stationId.length in 1..128
+        is RemoteCommand.PlayStream -> target.capability<ControlCapability.Station>()?.sources?.contains(StationSource.DirectStream) == true && validStreamUri(body.streamUri) && body.source == "direct_stream"
+        is RemoteCommand.SetVolume -> target.capability<ControlCapability.Volume>()?.let { body.level in it.minimum..it.maximum && (body.level - it.minimum) % it.step == 0 } == true
+        is RemoteCommand.ChangeVolume -> target.capability<ControlCapability.Volume>()?.let { body.delta != 0 && body.delta in -it.maximum..it.maximum && body.delta % it.step == 0 } == true
+        is RemoteCommand.SetMute -> target.capability<ControlCapability.Volume>()?.mute == true
+        RemoteCommand.Discover -> target.capability<ControlCapability.Chromecast>()?.actions?.contains(ChromecastAction.Discover) == true
+        is RemoteCommand.Connect -> target.capability<ControlCapability.Chromecast>()?.actions?.contains(ChromecastAction.Connect) == true && _receivers.value.any { it.receiverId == body.receiverId && it.validAt(now) }
+        RemoteCommand.Disconnect -> target.capability<ControlCapability.Chromecast>()?.actions?.contains(ChromecastAction.Disconnect) == true
+        RemoteCommand.StartRelay -> target.capability<ControlCapability.Relay>()?.actions?.contains(RelayAction.Start) == true
+        RemoteCommand.StopRelay -> target.capability<ControlCapability.Relay>()?.actions?.contains(RelayAction.Stop) == true
+        is RemoteCommand.SetRelayMode -> target.capability<ControlCapability.Relay>()?.let { RelayAction.SetMode in it.actions && body.mode in it.modes } == true
+    }
 }
+
+private fun validStreamUri(value: String): Boolean = runCatching {
+    URI(value).let { it.scheme in setOf("http", "https") && it.host != null && it.userInfo == null && it.fragment == null && (it.port in -1..65535) }
+}.getOrDefault(false)
+
+private val CommandPhase.terminal: Boolean get() = this == CommandPhase.Succeeded || this == CommandPhase.Failed || this == CommandPhase.Cancelled || this == CommandPhase.Expired

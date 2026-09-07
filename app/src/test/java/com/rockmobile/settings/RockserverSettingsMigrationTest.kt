@@ -27,4 +27,10 @@ class RockserverSettingsMigrationTest {
         assertNull(migratedStoredBearerToken(""))
         assertNull(migratedStoredBearerToken("custom-token"))
     }
+
+    @Test fun debugEndpoint_isHttpsOnlyAndNeverChangesRelease() {
+        assertEquals("https://control.test", resolvedRockserverUrl(true, "https://control.test/"))
+        assertEquals(SettingsRepository.PRODUCTION_BASE_URL, resolvedRockserverUrl(true, "http://10.0.2.2:3000"))
+        assertEquals(SettingsRepository.PRODUCTION_BASE_URL, resolvedRockserverUrl(false, "https://control.test"))
+    }
 }
