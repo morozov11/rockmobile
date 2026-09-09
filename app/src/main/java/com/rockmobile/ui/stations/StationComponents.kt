@@ -37,8 +37,10 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.WifiOff
+import com.rockmobile.devicecontrol.DevicePlaySupport
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -274,14 +276,34 @@ private fun FilterMenu(label: String, values: List<String>, selected: String?, s
 }
 
 @Composable
-internal fun StationTable(modifier: Modifier = Modifier, stations: List<Station>, currentStationId: String?, play: (Station) -> Unit, favourites: Set<String>, toggleFavourite: (Station) -> Unit) {
+internal fun StationTable(
+    modifier: Modifier = Modifier,
+    stations: List<Station>,
+    currentStationId: String?,
+    play: (Station) -> Unit,
+    favourites: Set<String>,
+    toggleFavourite: (Station) -> Unit,
+    devicePlaySupport: DevicePlaySupport = DevicePlaySupport(false),
+    inFlightStationIds: Set<String> = emptySet(),
+    onPlayOnDevice: (Station) -> Unit = {},
+) {
     Surface(modifier = modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .55f))) {
         if (stations.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No stations match these filters.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp)) {
                 itemsIndexed(stations, key = { _, station -> station.id }) { index, station ->
-                    StationRow(station, currentStationId == station.id, index, station.id in favourites, { play(station) }) { toggleFavourite(station) }
+                    StationRow(
+                        station = station,
+                        current = currentStationId == station.id,
+                        index = index,
+                        favourite = station.id in favourites,
+                        play = { play(station) },
+                        toggleFavourite = { toggleFavourite(station) },
+                        devicePlaySupport = devicePlaySupport,
+                        commandInFlight = station.id in inFlightStationIds,
+                        onPlayOnDevice = { onPlayOnDevice(station) },
+                    )
                 }
             }
         }
@@ -314,7 +336,17 @@ internal fun MiniPlayer(state: PlaybackState, toggle: () -> Unit, openPlayer: ()
 }
 
 @Composable
-private fun StationRow(station: Station, current: Boolean, index: Int, favourite: Boolean, play: () -> Unit, toggleFavourite: () -> Unit) {
+private fun StationRow(
+    station: Station,
+    current: Boolean,
+    index: Int,
+    favourite: Boolean,
+    play: () -> Unit,
+    toggleFavourite: () -> Unit,
+    devicePlaySupport: DevicePlaySupport = DevicePlaySupport(false),
+    commandInFlight: Boolean = false,
+    onPlayOnDevice: () -> Unit = {},
+) {
     val rowColor = when {
         current -> MaterialTheme.colorScheme.primary
         index % 2 == 1 -> MaterialTheme.colorScheme.background.copy(alpha = .32f)
@@ -330,6 +362,32 @@ private fun StationRow(station: Station, current: Boolean, index: Int, favourite
         Text(station.tags.joinToString(", "), color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 5.dp))
         Text(listOfNotNull(station.bitrateKbps?.let { "$it k" }, station.codec).joinToString(" / ").ifBlank { "—" }, color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(.75f))
         IconButton(onClick = play, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.PlayArrow, "Play ${station.name}", tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary) }
+        IconButton(
+            onClick = onPlayOnDevice,
+            enabled = devicePlaySupport.supported && !commandInFlight,
+            modifier = Modifier.size(36.dp),
+        ) {
+            if (commandInFlight) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                val targetName = devicePlaySupport.target?.name ?: "устройстве"
+                val desc = if (devicePlaySupport.supported) "Играть на «$targetName»" else "Играть на устройстве: ${devicePlaySupport.reason ?: "недоступно"}"
+                Icon(
+                    Icons.Default.Speaker,
+                    contentDescription = desc,
+                    tint = if (devicePlaySupport.supported) {
+                        if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+                    } else {
+                        if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    },
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
         IconButton(onClick = toggleFavourite, modifier = Modifier.size(36.dp)) { Text(if (favourite) "★" else "☆", color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium) }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .45f))

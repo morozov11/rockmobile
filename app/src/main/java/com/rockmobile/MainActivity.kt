@@ -13,6 +13,7 @@ import android.content.pm.PackageManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.getValue
@@ -68,8 +69,13 @@ class MainActivity : ComponentActivity() {
                 TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(), settings::rockserverUrl), OkHttpDirectorySocketFactory(), settings),
                 account::directorySession,
             ))
+            val targetDirectoryState = targetDirectory.state.collectAsStateWithLifecycle().value
+            val targetCommands = targetDirectory.commands.collectAsStateWithLifecycle().value
             val accountState = account.state.collectAsStateWithLifecycle().value
             val accountConnected = accountSessionActive(accountState)
+            androidx.compose.runtime.LaunchedEffect(accountConnected) {
+                if (accountConnected) targetDirectory.useCurrentAccount()
+            }
             androidx.compose.runtime.LaunchedEffect(account) {
                 account.ensureSessionVisible()
                 if (isRockmobileReturnIntent(intent)) account.resumePairing(fromBrowser = true)
@@ -77,6 +83,51 @@ class MainActivity : ComponentActivity() {
             val state = model.state.collectAsStateWithLifecycle().value
             val personal = personalData.state.collectAsStateWithLifecycle().value
             val playback = androidx.compose.runtime.remember { PlaybackController(this, unavailableVoiceStations) }
+            val snackbarHostState = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
+            val playOnDeviceAction: (com.rockmobile.domain.model.Station) -> Unit = { station ->
+                val support = com.rockmobile.devicecontrol.checkDevicePlaySupport(targetDirectoryState)
+                val target = support.target
+                val command = com.rockmobile.devicecontrol.buildPlayStationCommand(station, target)
+                if (command == null || !support.supported) {
+                    lifecycleScope.launch {
+                        snackbarHostState.showSnackbar(support.reason ?: "Воспроизведение на устройстве недоступно")
+                    }
+                } else {
+                    val commandId = targetDirectory.dispatch(command)
+                    if (commandId == null) {
+                        lifecycleScope.launch {
+                            val result = snackbarHostState.showSnackbar(
+                                message = "Не удалось отправить команду на «${target?.name ?: "устройство"}»",
+                                actionLabel = "Повторить",
+                            )
+                            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                targetDirectory.dispatch(command)
+                            }
+                        }
+                    }
+                }
+            }
+            var lastFailedCommandId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+            androidx.compose.runtime.LaunchedEffect(targetCommands) {
+                val failed = targetCommands.values
+                    .filter { it.phase == com.rockmobile.devicecontrol.CommandPhase.Failed && it.commandId != lastFailedCommandId }
+                    .maxByOrNull { it.commandId }
+                if (failed != null) {
+                    lastFailedCommandId = failed.commandId
+                    val result = snackbarHostState.showSnackbar(
+                        message = failed.detail ?: "Команда на устройстве не выполнена",
+                        actionLabel = "Повторить",
+                    )
+                    if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                        val stationId = failed.actionKey.removePrefix("station.play_station:")
+                        val stationToRetry = (state as? com.rockmobile.ui.stations.StationsUiState.Content)?.catalogue?.stations?.find { it.id == stationId }
+                            ?: playback.state.value.station?.takeIf { it.id == stationId }
+                        if (stationToRetry != null) {
+                            playOnDeviceAction(stationToRetry)
+                        }
+                    }
+                }
+            }
             val voice = androidx.compose.runtime.remember(account) {
                 VoiceCommandController(
                     AndroidVoiceRecorder(this), RockserverVoiceClient(), settings::rockserverUrl,
@@ -98,13 +149,43 @@ class MainActivity : ComponentActivity() {
             androidx.compose.runtime.DisposableEffect(Unit) { onDispose { voice.cancel(); playback.release() } }
             val playbackState = playback.state.collectAsStateWithLifecycle().value
             val voiceState = voice.state.collectAsStateWithLifecycle().value
-            if (playerScreen) PlayerScreen(playbackState, { playerScreen = false }, playback::toggle, playback::skipToPrevious, playback::skipToNext, playback::retry)
-            else StationsScreen(state = state, playback = playbackState, voice = voiceState, retry = model::retryRockserver, updateFilters = model::updateFilters, play = { station, queue -> personalData.recordPlay(station, "catalog"); playback.play(station, queue) }, toggle = playback::toggle,
+            if (playerScreen) PlayerScreen(
+                state = playbackState,
+                back = { playerScreen = false },
+                toggle = playback::toggle,
+                previous = playback::skipToPrevious,
+                next = playback::skipToNext,
+                retry = playback::retry,
+                targetDirectoryState = targetDirectoryState,
+                commands = targetCommands,
+                onPlayOnDevice = playOnDeviceAction,
+                snackbarHostState = snackbarHostState,
+            )
+            else StationsScreen(
+                state = state,
+                playback = playbackState,
+                voice = voiceState,
+                retry = model::retryRockserver,
+                updateFilters = model::updateFilters,
+                play = { station, queue -> personalData.recordPlay(station, "catalog"); playback.play(station, queue) },
+                toggle = playback::toggle,
                 onVoice = {
                     if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) voice.start()
                     else { voice.requestPermission(); microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
-                }, onFinishVoice = voice::finishRecording, onCancelVoice = voice::cancel, onDismissVoice = voice::dismiss,
-                openPlayer = { playerScreen = true }, personal = personal, toggleFavourite = { station -> personalData.toggleFavourite(station) }, openAccount = { account.ensureSessionVisible(); accountOpen = true }, accountConnected = accountConnected, clearHistory = personalData::clearHistory,
+                },
+                onFinishVoice = voice::finishRecording,
+                onCancelVoice = voice::cancel,
+                onDismissVoice = voice::dismiss,
+                openPlayer = { playerScreen = true },
+                personal = personal,
+                toggleFavourite = { station -> personalData.toggleFavourite(station) },
+                openAccount = { account.ensureSessionVisible(); accountOpen = true },
+                accountConnected = accountConnected,
+                clearHistory = personalData::clearHistory,
+                targetDirectoryState = targetDirectoryState,
+                commands = targetCommands,
+                onPlayOnDevice = playOnDeviceAction,
+                snackbarHostState = snackbarHostState,
             )
             if (accountOpen) AccountDialog(account, settings.rockserverUrl(), targetDirectory) { accountOpen = false }
             }

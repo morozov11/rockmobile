@@ -1,5 +1,22 @@
 # RockMobile task log
 
+## RM-1 — play catalog stations on a device-control target (2026-09-09)
+
+- Scope: play catalog stations on an explicitly selected usable device-control target (player role,
+  online presence, fresh state, media.control scope granted) advertising media.station with
+  rockserver_catalog capability. Gated from station list and player screen without auto-retry.
+- Result: "Играть на устройстве" is integrated into StationRow and PlayerScreen; TargetDirectoryRepository
+  dispatches station.play_station using the existing 10s deadline and command lifecycle. Target
+  unavailability displays clear reasons (offline, unselected, stale, missing scope). Late Succeeded
+  arriving after Expired is accepted and shown as "Выполнено после истечения ожидания". On command failure,
+  a Snackbar offers manual retry.
+- Checks: `:app:testDebugUnitTest`, `:app:assembleDebug`, and `git diff --check` passed. Unit tests
+  cover RemoteCommand.PlayStation construction, direct_stream rejection, capability gating, and
+  the Expired -> late Succeeded lifecycle.
+- Status: local implementation and module tests complete. End-to-end live verification on physical
+  ESP32 hardware is deferred pending RE-11 provisioning.
+
+
 ## DC-016 — controller socket refresh after dialog re-entry (2026-09-07)
 
 - Fixed an E2E timeout where the account dialog retained an object for an already-dead controller

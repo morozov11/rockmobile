@@ -54,3 +54,61 @@ data class CommandLifecycle(
 data class EphemeralReceiver(val receiverId: String, val displayName: String, val expiresAt: Instant) {
     fun validAt(now: Instant): Boolean = now.isBefore(expiresAt)
 }
+
+/** Determines whether a station represents a direct stream URI rather than a RockServer catalog station. */
+fun isDirectStreamStation(station: com.rockmobile.domain.model.Station): Boolean =
+    station.id.startsWith("direct_stream") ||
+        station.id.startsWith("http://") ||
+        station.id.startsWith("https://") ||
+        station.id.contains("://")
+
+/**
+ * Builds a typed station.play_station command for a catalog station.
+ * Returns null if the station is a direct stream or if the target does not support RockServer catalog playback.
+ */
+fun buildPlayStationCommand(
+    station: com.rockmobile.domain.model.Station,
+    target: ControllerTarget? = null,
+): RemoteCommand.PlayStation? {
+    if (isDirectStreamStation(station)) return null
+    if (station.id.length !in 1..128) return null
+    if (target != null) {
+        val stationCap = target.capability<ControlCapability.Station>() ?: return null
+        if (StationSource.RockserverCatalog !in stationCap.sources) return null
+    }
+    return RemoteCommand.PlayStation(station.id)
+}
+
+data class DevicePlaySupport(
+    val supported: Boolean,
+    val reason: String? = null,
+    val target: ControllerTarget? = null,
+)
+
+fun checkDevicePlaySupport(state: TargetDirectoryState): DevicePlaySupport = when (state) {
+    TargetDirectoryState.Inactive, TargetDirectoryState.Loading ->
+        DevicePlaySupport(false, "Устройство не выбрано")
+    is TargetDirectoryState.Unavailable ->
+        DevicePlaySupport(false, state.message)
+    is TargetDirectoryState.Available -> {
+        val target = state.selectedTarget
+        if (target == null) {
+            DevicePlaySupport(false, "Устройство не выбрано")
+        } else if (target.presence == TargetPresence.Offline) {
+            DevicePlaySupport(false, "Устройство offline", target)
+        } else if (target.freshness != TargetFreshness.Fresh) {
+            DevicePlaySupport(false, "Данные устройства устарели", target)
+        } else if (DeviceRole.Player !in target.roles) {
+            DevicePlaySupport(false, "Устройство не является плеером", target)
+        } else if ("media.control" !in state.grantedScopes) {
+            DevicePlaySupport(false, "Нет разрешения media.control", target)
+        } else {
+            val stationCap = target.capability<ControlCapability.Station>()
+            if (stationCap == null || StationSource.RockserverCatalog !in stationCap.sources) {
+                DevicePlaySupport(false, "Устройство не поддерживает каталог станций", target)
+            } else {
+                DevicePlaySupport(true, null, target)
+            }
+        }
+    }
+}

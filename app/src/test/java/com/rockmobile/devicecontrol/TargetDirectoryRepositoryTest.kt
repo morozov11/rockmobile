@@ -156,6 +156,24 @@ class TargetDirectoryRepositoryTest {
         assertEquals(CommandPhase.Cancelled, repository.commands.value[second]!!.phase)
     }
 
+    @Test fun expiredCommand_lateSuccessTransitionsToSucceededWithoutError() = runTest {
+        val socket = FakeSockets()
+        val first = directory(1, rockCast(known = listOf("media.playback", "media.station")), scopes = listOf("device.directory.read", "media.control"))
+        val refreshed = directory(2, rockCast(known = listOf("media.playback", "media.station")), scopes = listOf("device.directory.read", "media.control"))
+        val repository = TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(QueueTransport(listOf(first, refreshed)))) { "https://server.test" }, socket, MemorySelections(), ioDispatcher = testDispatcher())
+        repository.start(this, session()); runCurrent(); repository.select("rockcast")
+        val id = repository.dispatch(RemoteCommand.PlayStation("rock-fm"))!!
+        assertEquals(CommandPhase.Pending, repository.commands.value[id]!!.phase)
+        advanceTimeBy(10_001)
+        runCurrent()
+        assertEquals(CommandPhase.Expired, repository.commands.value[id]!!.phase)
+        socket.listener!!.onMessage(DirectoryWireMessage.CommandResult(id, CommandResultStatus.Succeeded, null, CommandResultOutputDto(stateRevision = 2)))
+        runCurrent()
+        val finalCommand = repository.commands.value[id]!!
+        assertEquals(CommandPhase.Succeeded, finalCommand.phase)
+        assertEquals("Выполнено после истечения ожидания.", finalCommand.detail)
+    }
+
     private fun kotlinx.coroutines.test.TestScope.repository(socket: FakeSockets, selections: MemorySelections, vararg snapshots: DirectoryDto): TargetDirectoryRepository =
         TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(QueueTransport(snapshots.toList()))) { "https://server.test" }, socket, selections, 100, testDispatcher())
 
@@ -171,6 +189,7 @@ class TargetDirectoryRepositoryTest {
     private fun capability(name: String) = when (name) {
         "media.playback" -> CapabilityDto(name, 1, actions = listOf("play", "pause"))
         "media.volume" -> CapabilityDto(name, 1, minimum = 0, maximum = 100, step = 5, mute = true)
+        "media.station" -> CapabilityDto(name, 1, sources = listOf("rockserver_catalog"))
         else -> CapabilityDto(name, 1)
     }
 

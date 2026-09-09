@@ -80,6 +80,6 @@ fun CapabilityControls(
 
 private fun commandStatus(command: CommandLifecycle): String = when (command.phase) {
     CommandPhase.Pending -> "Команда отправляется…"; CommandPhase.Received -> "Сервер получил команду."; CommandPhase.Accepted -> "Плеер принял команду…"
-    CommandPhase.AwaitingState -> "Плеер подтвердил выполнение; обновляем фактическое состояние…"; CommandPhase.Succeeded -> "Состояние плеера подтверждено."
+    CommandPhase.AwaitingState -> command.detail ?: "Плеер подтвердил выполнение; обновляем фактическое состояние…"; CommandPhase.Succeeded -> command.detail ?: "Состояние плеера подтверждено."
     CommandPhase.Failed, CommandPhase.Cancelled, CommandPhase.Expired -> command.detail ?: "Команда не выполнена."
 }

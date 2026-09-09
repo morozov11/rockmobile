@@ -169,7 +169,10 @@ internal class TargetDirectoryRepository(
         scopes = directory.grantedScopes.toSet()
         targets = directory.devices.map { it.toTarget() }.associateBy(ControllerTarget::id)
         _commands.value.values.filter { it.phase == CommandPhase.AwaitingState }.forEach { command ->
-            if (targets[command.targetId]?.usable == true) _commands.value += command.commandId to command.copy(phase = CommandPhase.Succeeded)
+            if (targets[command.targetId]?.usable == true) {
+                val detail = if (command.detail?.contains("истечения ожидания") == true) "Выполнено после истечения ожидания." else null
+                _commands.value += command.commandId to command.copy(phase = CommandPhase.Succeeded, detail = detail)
+            }
         }
         if (resetReconnect) reconnectAttempt = 0
         publish()
@@ -210,14 +213,18 @@ internal class TargetDirectoryRepository(
 
     private suspend fun handleResult(message: DirectoryWireMessage.CommandResult) {
         val command = _commands.value[message.commandId] ?: return
-        if (command.phase.terminal) return
+        if (command.phase == CommandPhase.Succeeded || command.phase == CommandPhase.Failed || command.phase == CommandPhase.Cancelled) return
+        val wasExpired = command.phase == CommandPhase.Expired
         if (message.status == CommandResultStatus.Failed) {
-            _commands.value += command.commandId to command.copy(phase = CommandPhase.Failed, detail = message.error?.message ?: "Команда отклонена сервером.")
-            reload(connectAfter = true)
+            if (!wasExpired) {
+                _commands.value += command.commandId to command.copy(phase = CommandPhase.Failed, detail = message.error?.message ?: "Команда отклонена сервером.")
+                reload(connectAfter = true)
+            }
             return
         }
         message.output?.receivers?.mapNotNull(::receiver)?.let { discovered -> _receivers.value = discovered.filter { it.validAt(Instant.now()) } }
-        _commands.value += command.commandId to command.copy(phase = CommandPhase.AwaitingState, detail = "Команда завершена; обновляем фактическое состояние.")
+        val detail = if (wasExpired) "Выполнено после истечения ожидания; обновляем фактическое состояние." else "Команда завершена; обновляем фактическое состояние."
+        _commands.value += command.commandId to command.copy(phase = CommandPhase.AwaitingState, detail = detail)
         reload(connectAfter = false)
     }
 

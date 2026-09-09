@@ -1,5 +1,6 @@
 package com.rockmobile.ui.stations
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -10,15 +11,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.rockmobile.data.personal.PersonalData
+import com.rockmobile.devicecontrol.CommandLifecycle
+import com.rockmobile.devicecontrol.TargetDirectoryState
+import com.rockmobile.devicecontrol.checkDevicePlaySupport
 import com.rockmobile.domain.model.Station
 import com.rockmobile.playback.PlaybackState
 import com.rockmobile.voice.VoiceUiState
@@ -42,59 +49,80 @@ fun StationsScreen(
     openAccount: () -> Unit,
     accountConnected: Boolean = false,
     clearHistory: () -> Unit,
+    targetDirectoryState: TargetDirectoryState = TargetDirectoryState.Inactive,
+    commands: Map<String, CommandLifecycle> = emptyMap(),
+    onPlayOnDevice: (Station) -> Unit = {},
+    snackbarHostState: SnackbarHostState? = null,
 ) {
     var favouritesOpen by rememberSaveable { mutableStateOf(false) }
     var historyOpen by rememberSaveable { mutableStateOf(false) }
+    val devicePlaySupport = checkDevicePlaySupport(targetDirectoryState)
+    val inFlightStationIds = commands.values
+        .filter { it.inFlight && it.actionKey.startsWith("station.play_station:") }
+        .map { it.actionKey.removePrefix("station.play_station:") }
+        .toSet()
+
     Surface(color = MaterialTheme.colorScheme.background) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .imePadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            RockHeader(retry, openAccount, accountConnected)
-            Spacer(Modifier.height(6.dp))
-            when (state) {
-                StationsUiState.Loading -> LoadingState()
-                is StationsUiState.Error -> ErrorState(state.message, retry)
-                is StationsUiState.Content -> {
-                    state.fallbackReason?.let { FallbackBanner(it) }
-                    CatalogueHeader(state.catalogue.source.name, state.stations.size)
-                    PersonalSummary(
-                        personal,
-                        onOpenFavourites = { favouritesOpen = true },
-                        onOpenHistory = { historyOpen = true },
+        Box(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .imePadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                RockHeader(retry, openAccount, accountConnected)
+                Spacer(Modifier.height(6.dp))
+                when (state) {
+                    StationsUiState.Loading -> LoadingState()
+                    is StationsUiState.Error -> ErrorState(state.message, retry)
+                    is StationsUiState.Content -> {
+                        state.fallbackReason?.let { FallbackBanner(it) }
+                        CatalogueHeader(state.catalogue.source.name, state.stations.size)
+                        PersonalSummary(
+                            personal,
+                            onOpenFavourites = { favouritesOpen = true },
+                            onOpenHistory = { historyOpen = true },
+                        )
+                        SearchAndFilters(state, voice, updateFilters, onVoice, onFinishVoice, onCancelVoice)
+                        VoiceStatusBar(voice, onCancelVoice, onDismissVoice)
+                        MiniPlayer(playback, toggle, openPlayer)
+                        Spacer(Modifier.height(6.dp))
+                        StationTable(
+                            modifier = Modifier.weight(1f),
+                            stations = state.stations,
+                            currentStationId = playback.station?.id,
+                            play = { station -> play(station, state.stations) },
+                            favourites = personal.favourites.map { it.stationId }.toSet(),
+                            toggleFavourite = toggleFavourite,
+                            devicePlaySupport = devicePlaySupport,
+                            inFlightStationIds = inFlightStationIds,
+                            onPlayOnDevice = onPlayOnDevice,
+                        )
+                    }
+                }
+                if (favouritesOpen && state is StationsUiState.Content) {
+                    PersonalFavouritesDialog(
+                        data = personal,
+                        stations = state.catalogue.stations,
+                        onDismiss = { favouritesOpen = false },
+                        onPlay = { station -> play(station, state.stations) },
                     )
-                    SearchAndFilters(state, voice, updateFilters, onVoice, onFinishVoice, onCancelVoice)
-                    VoiceStatusBar(voice, onCancelVoice, onDismissVoice)
-                    MiniPlayer(playback, toggle, openPlayer)
-                    Spacer(Modifier.height(6.dp))
-                    StationTable(
-                        modifier = Modifier.weight(1f),
-                        stations = state.stations,
-                        currentStationId = playback.station?.id,
-                        play = { station -> play(station, state.stations) },
-                        favourites = personal.favourites.map { it.stationId }.toSet(),
-                        toggleFavourite = toggleFavourite,
+                }
+                if (historyOpen && state is StationsUiState.Content) {
+                    PersonalHistoryDialog(
+                        data = personal,
+                        stations = state.catalogue.stations,
+                        onDismiss = { historyOpen = false },
+                        onPlay = { station -> play(station, state.stations) },
+                        onClearHistory = clearHistory,
                     )
                 }
             }
-            if (favouritesOpen && state is StationsUiState.Content) {
-                PersonalFavouritesDialog(
-                    data = personal,
-                    stations = state.catalogue.stations,
-                    onDismiss = { favouritesOpen = false },
-                    onPlay = { station -> play(station, state.stations) },
-                )
-            }
-            if (historyOpen && state is StationsUiState.Content) {
-                PersonalHistoryDialog(
-                    data = personal,
-                    stations = state.catalogue.stations,
-                    onDismiss = { historyOpen = false },
-                    onPlay = { station -> play(station, state.stations) },
-                    onClearHistory = clearHistory,
+            snackbarHostState?.let {
+                SnackbarHost(
+                    hostState = it,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
                 )
             }
         }

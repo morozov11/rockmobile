@@ -1,5 +1,19 @@
 # RockMobile status
 
+## RM-1 play catalog stations on a device-control target (local implementation, 2026-09-09)
+
+RockMobile now allows dispatching `station.play_station` to an explicitly selected, usable
+device-control target directly from the station catalog (`StationRow`) and the full-screen player
+(`PlayerScreen`). The command follows the standard controller WSS lifecycle without creating a
+secondary command path. Actions are enabled only when the target is usable (player role, online,
+fresh, `media.control` scope granted) and supports `media.station` with `rockserver_catalog`.
+Unusable targets show clear contextual reasons (offline, not selected, stale, missing scope).
+Commands track in-flight phases with indicators; late Succeeded results arriving after the 10-second
+client deadline transition to Succeeded with "Выполнено после истечения ожидания". Failures show
+a Snackbar with a manual "Повторить" action (no auto-retry). Unit tests and assembleDebug pass;
+physical hardware acceptance with ESP32 is deferred pending RE-11.
+
+
 ## DC-016 controller WebSocket recovery (live acceptance, 2026-09-07)
 
 Re-entering the account dialog now discards its actionable directory view until it reconnects the

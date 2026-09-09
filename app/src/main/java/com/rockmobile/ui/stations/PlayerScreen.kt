@@ -2,6 +2,7 @@ package com.rockmobile.ui.stations
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -20,11 +22,15 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,45 +40,136 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.rockmobile.devicecontrol.CommandLifecycle
+import com.rockmobile.devicecontrol.CommandPhase
+import com.rockmobile.devicecontrol.TargetDirectoryState
+import com.rockmobile.devicecontrol.checkDevicePlaySupport
+import com.rockmobile.domain.model.Station
 import com.rockmobile.playback.PlaybackState
 
 @Composable
-fun PlayerScreen(state: PlaybackState, back: () -> Unit, toggle: () -> Unit, previous: () -> Unit, next: () -> Unit, retry: () -> Unit) {
+fun PlayerScreen(
+    state: PlaybackState,
+    back: () -> Unit,
+    toggle: () -> Unit,
+    previous: () -> Unit,
+    next: () -> Unit,
+    retry: () -> Unit,
+    targetDirectoryState: TargetDirectoryState = TargetDirectoryState.Inactive,
+    commands: Map<String, CommandLifecycle> = emptyMap(),
+    onPlayOnDevice: (Station) -> Unit = {},
+    snackbarHostState: SnackbarHostState? = null,
+) {
     val station = state.station
+    val devicePlaySupport = checkDevicePlaySupport(targetDirectoryState)
+    val target = devicePlaySupport.target
+    val latestCommand = if (station != null && target != null) {
+        commands.values
+            .filter { it.targetId == target.id && it.actionKey == "station.play_station:${station.id}" }
+            .maxByOrNull { it.commandId }
+    } else null
+
     Surface(color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                Text("Now playing", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.height(20.dp))
-            if (station != null) {
-                RockPanel(Modifier.fillMaxWidth().weight(1f)) {
-                    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("ROCKCAST PLAYER", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(28.dp))
-                        StationLogo(station, Modifier.size(220.dp))
-                        Spacer(Modifier.height(24.dp))
-                        Text(station.name, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
-                        state.streamTitle?.let { Text(it, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp)) }
-                        state.streamArtist?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center) }
-                        if (state.streamTitle == null && state.streamArtist == null) Text("Track info appears after Play", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 10.dp))
-                        state.error?.let {
-                            Text("Couldn't connect to this station", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 18.dp))
-                            Button(onClick = retry, modifier = Modifier.padding(top = 8.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurface)) { Text("Try again") }
-                        }
-                        Spacer(Modifier.weight(1f))
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                            IconButton(onClick = previous, enabled = state.canSkipPrevious, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.SkipPrevious, "Previous", tint = MaterialTheme.colorScheme.onSurface) }
-                            IconButton(onClick = toggle, modifier = Modifier.size(68.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) { Icon(if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (state.isPlaying) "Pause" else "Play", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(34.dp)) }
-                            IconButton(onClick = next, enabled = state.canSkipNext, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.SkipNext, "Next", tint = MaterialTheme.colorScheme.onSurface) }
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Text("Now playing", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(20.dp))
+                if (station != null) {
+                    RockPanel(Modifier.fillMaxWidth().weight(1f)) {
+                        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("ROCKCAST PLAYER", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(20.dp))
+                            StationLogo(station, Modifier.size(190.dp))
+                            Spacer(Modifier.height(16.dp))
+                            Text(station.name, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
+                            state.streamTitle?.let { Text(it, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp)) }
+                            state.streamArtist?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center) }
+                            if (state.streamTitle == null && state.streamArtist == null) Text("Track info appears after Play", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+                            state.error?.let {
+                                Text("Couldn't connect to this station", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp))
+                                Button(onClick = retry, modifier = Modifier.padding(top = 6.dp), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurface)) { Text("Try again") }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            val inFlight = latestCommand?.inFlight == true
+                            Button(
+                                onClick = { onPlayOnDevice(station) },
+                                enabled = devicePlaySupport.supported && !inFlight,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                ),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            ) {
+                                if (inFlight) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                } else {
+                                    Icon(Icons.Default.Speaker, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(
+                                    if (target != null) "Играть на «${target.name}»" else "Играть на устройстве",
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            }
+                            if (!devicePlaySupport.supported && devicePlaySupport.reason != null) {
+                                Text(
+                                    devicePlaySupport.reason,
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(top = 4.dp, start = 16.dp, end = 16.dp),
+                                )
+                            } else if (latestCommand != null) {
+                                val statusColor = when (latestCommand.phase) {
+                                    CommandPhase.Failed, CommandPhase.Cancelled, CommandPhase.Expired -> MaterialTheme.colorScheme.error
+                                    CommandPhase.Succeeded -> MaterialTheme.colorScheme.primary
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                                val statusText = when (latestCommand.phase) {
+                                    CommandPhase.Pending -> "Команда отправляется…"
+                                    CommandPhase.Received -> "Сервер получил команду."
+                                    CommandPhase.Accepted -> "Плеер принял команду…"
+                                    CommandPhase.AwaitingState -> latestCommand.detail ?: "Обновляем фактическое состояние…"
+                                    CommandPhase.Succeeded -> latestCommand.detail ?: "✓ Выполнено на устройстве"
+                                    CommandPhase.Expired -> latestCommand.detail ?: "Время ожидания команды истекло."
+                                    CommandPhase.Failed -> latestCommand.detail ?: "Команда не выполнена."
+                                    CommandPhase.Cancelled -> latestCommand.detail ?: "Команда отменена."
+                                }
+                                Text(
+                                    statusText,
+                                    color = statusColor,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(top = 4.dp, start = 16.dp, end = 16.dp),
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                                IconButton(onClick = previous, enabled = state.canSkipPrevious, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.SkipPrevious, "Previous", tint = MaterialTheme.colorScheme.onSurface) }
+                                IconButton(onClick = toggle, modifier = Modifier.size(68.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) { Icon(if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (state.isPlaying) "Pause" else "Play", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(34.dp)) }
+                                IconButton(onClick = next, enabled = state.canSkipNext, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.SkipNext, "Next", tint = MaterialTheme.colorScheme.onSurface) }
+                            }
                         }
                     }
+                } else {
+                    Spacer(Modifier.weight(1f))
+                    Text("Choose a station to start listening.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.weight(1f))
                 }
-            } else {
-                Spacer(Modifier.weight(1f))
-                Text("Choose a station to start listening.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.weight(1f))
+            }
+            snackbarHostState?.let {
+                SnackbarHost(
+                    hostState = it,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
+                )
             }
         }
     }
