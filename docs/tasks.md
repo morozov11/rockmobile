@@ -1,18 +1,30 @@
 # RockMobile task log
 
-## RM-4 — state-driven RockCast now-playing UI (planned 2026-09-17)
+## RM-4 — Station-First state-driven live playback UI (implemented locally, 2026-09-17)
 
-- Scope: consume the existing directory runtime-state projection in one shared
-  presentation store; show confirmed station/playback/volume in the station
-  picker, mini-player and Device screen. Keep pending intent separate, commit
-  volume on gesture completion, and reconcile all values from device state.
-- Acceptance: never label a station as playing from a tap or `succeeded` result
-  alone; require fresh matching `station_id` plus buffering/playing state. Cover
-  mismatched station, command failure, stale/offline, missing catalog entry,
-  reconnect, and externally changed volume in unit/UI tests.
+- Goal: render confirmed station/playback/volume from the directory `runtime_state`
+  projection (RS-8) with a Station-First navigation revision (2026-09-17), keeping
+  pending intent, volume gesture and catalogue presentation strictly separate.
+- Scope: `runtime_state` DTO/domain (`DirectoryDtos.kt`, `DirectoryModels.kt`,
+  absence → `Unknown`); pure `LivePlaybackReducer` + shared `LivePlaybackStore`
+  (§4.4 matrix, external override, drag isolation, single commit-on-release);
+  `StationPlayerScreen` (hero, output-device selector with reasons, on-air badge
+  without seek/timeline, capability-driven transport, volume card);
+  `LiveMiniPlayer`; catalogue rows without per-device buttons; dead `PlayerScreen`
+  removed; `MainActivity` wiring incl. override-driven station-screen expansion
+  and manual-retry snackbar.
+- Result: a station is never labelled playing from a tap or `succeeded` result
+  alone; only a fresh matching `station_id` with buffering/playing state confirms.
+  Absent state degrades to `Unknown`, missing catalogue entries to `Станция <id>`.
+- Checks: `compileDebugKotlin`; `testDebugUnitTest` — 129 tests, 0 failed
+  (incl. 15 `LivePlaybackReducerTest` cases: §4.4 matrix rows, override, stop,
+  failure/retry, drag isolation/commit/echo, absence, stale revision, reconnect
+  snapshot, mini-player auto-select, catalogue fallback); `lintDebug`;
+  `git diff --check`. All with the mandated process-local `JAVA_TOOL_OPTIONS`.
 - Canonical design and dependency gates:
   [`rockmobile-rockcast-live-control.md`](../../rockserver/docs/roadmap/rockmobile-rockcast-live-control.md).
-- Status: **planned.** Relay/Chromecast controls and raw stream URLs are out of scope.
+- Status: **implemented locally; physical USB acceptance (Phase 4) pending.**
+  Relay/Chromecast controls and raw stream URLs are out of scope.
 
 ## RC-3 — live RockCast control accepted (2026-09-17)
 

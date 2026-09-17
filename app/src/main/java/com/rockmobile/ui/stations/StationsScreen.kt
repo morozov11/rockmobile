@@ -23,13 +23,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.rockmobile.data.personal.PersonalData
-import com.rockmobile.devicecontrol.CommandLifecycle
-import com.rockmobile.devicecontrol.TargetDirectoryState
-import com.rockmobile.devicecontrol.checkDevicePlaySupport
+import com.rockmobile.devicecontrol.LivePlaybackStatusUi
+import com.rockmobile.devicecontrol.LiveTargetPresentation
 import com.rockmobile.domain.model.Station
 import com.rockmobile.playback.PlaybackState
 import com.rockmobile.voice.VoiceUiState
 
+/**
+ * Station catalog (ТЗ §5.1): search + quick genre/favourite chips, a music-focused station
+ * list without per-device buttons, and a sticky mini-player fed by the same live state as
+ * the station screen. Tapping a row opens that station's screen.
+ */
 @Composable
 fun StationsScreen(
     state: StationsUiState,
@@ -39,29 +43,30 @@ fun StationsScreen(
     updateFilters: ((StationFilters) -> StationFilters) -> Unit,
     play: (Station, List<Station>) -> Unit,
     toggle: () -> Unit,
+    localStop: () -> Unit,
     onVoice: () -> Unit,
     onFinishVoice: () -> Unit,
     onCancelVoice: () -> Unit,
     onDismissVoice: () -> Unit,
-    openPlayer: () -> Unit,
+    openStation: (String) -> Unit,
     personal: PersonalData,
     toggleFavourite: (Station) -> Unit,
     openAccount: () -> Unit,
     openDevices: () -> Unit,
     accountConnected: Boolean = false,
     clearHistory: () -> Unit,
-    targetDirectoryState: TargetDirectoryState = TargetDirectoryState.Inactive,
-    commands: Map<String, CommandLifecycle> = emptyMap(),
-    onPlayOnDevice: (Station) -> Unit = {},
+    liveRemote: LiveTargetPresentation? = null,
+    liveRemoteTargetName: String? = null,
+    remotePlay: (String) -> Unit = {},
+    remoteStop: () -> Unit = {},
     snackbarHostState: SnackbarHostState? = null,
 ) {
     var favouritesOpen by rememberSaveable { mutableStateOf(false) }
     var historyOpen by rememberSaveable { mutableStateOf(false) }
-    val devicePlaySupport = checkDevicePlaySupport(targetDirectoryState)
-    val inFlightStationIds = commands.values
-        .filter { it.inFlight && it.actionKey.startsWith("station.play_station:") }
-        .map { it.actionKey.removePrefix("station.play_station:") }
-        .toSet()
+    val remotePlayingId = liveRemote
+        ?.takeIf { it.status == LivePlaybackStatusUi.Playing || it.status == LivePlaybackStatusUi.Buffering }
+        ?.confirmedStationId
+    val currentStationId = remotePlayingId ?: playback.station?.id
 
     Surface(color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
@@ -87,18 +92,25 @@ fun StationsScreen(
                         )
                         SearchAndFilters(state, voice, updateFilters, onVoice, onFinishVoice, onCancelVoice)
                         VoiceStatusBar(voice, onCancelVoice, onDismissVoice)
-                        MiniPlayer(playback, toggle, openPlayer)
+                        LiveMiniPlayer(
+                            remote = liveRemote,
+                            remoteTargetName = liveRemoteTargetName,
+                            local = playback,
+                            stations = state.catalogue.stations,
+                            openStation = openStation,
+                            remotePlay = remotePlay,
+                            remoteStop = remoteStop,
+                            localToggle = toggle,
+                            localStop = localStop,
+                        )
                         Spacer(Modifier.height(6.dp))
                         StationTable(
                             modifier = Modifier.weight(1f),
                             stations = state.stations,
-                            currentStationId = playback.station?.id,
-                            play = { station -> play(station, state.stations) },
+                            currentStationId = currentStationId,
+                            openStation = { station -> openStation(station.id) },
                             favourites = personal.favourites.map { it.stationId }.toSet(),
                             toggleFavourite = toggleFavourite,
-                            devicePlaySupport = devicePlaySupport,
-                            inFlightStationIds = inFlightStationIds,
-                            onPlayOnDevice = onPlayOnDevice,
                         )
                     }
                 }

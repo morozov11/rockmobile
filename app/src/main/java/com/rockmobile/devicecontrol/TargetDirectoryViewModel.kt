@@ -13,6 +13,9 @@ class TargetDirectoryViewModel internal constructor(
     val commands = repository.commands
     val receivers = repository.receivers
 
+    /** Single live-presentation source shared by the mini-player and StationPlayerScreen. */
+    val live: LivePlaybackStore = LivePlaybackStore(repository, viewModelScope)
+
     fun useCurrentAccount() = viewModelScope.launch {
         sessionProvider()?.let { repository.start(viewModelScope, it) } ?: repository.stop()
     }

@@ -38,10 +38,8 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.WifiOff
-import com.rockmobile.devicecontrol.DevicePlaySupport
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -283,17 +281,15 @@ private fun FilterMenu(label: String, values: List<String>, selected: String?, s
     }
 }
 
+/** Catalogue list focused on music (ТЗ §5.1): rows carry no per-device playback buttons. */
 @Composable
 internal fun StationTable(
     modifier: Modifier = Modifier,
     stations: List<Station>,
     currentStationId: String?,
-    play: (Station) -> Unit,
+    openStation: (Station) -> Unit,
     favourites: Set<String>,
     toggleFavourite: (Station) -> Unit,
-    devicePlaySupport: DevicePlaySupport = DevicePlaySupport(false),
-    inFlightStationIds: Set<String> = emptySet(),
-    onPlayOnDevice: (Station) -> Unit = {},
 ) {
     Surface(modifier = modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .55f))) {
         if (stations.isEmpty()) {
@@ -306,11 +302,8 @@ internal fun StationTable(
                         current = currentStationId == station.id,
                         index = index,
                         favourite = station.id in favourites,
-                        play = { play(station) },
+                        openStation = { openStation(station) },
                         toggleFavourite = { toggleFavourite(station) },
-                        devicePlaySupport = devicePlaySupport,
-                        commandInFlight = station.id in inFlightStationIds,
-                        onPlayOnDevice = { onPlayOnDevice(station) },
                     )
                 }
             }
@@ -325,21 +318,90 @@ internal fun RockPanel(modifier: Modifier = Modifier, content: @Composable Colum
     }
 }
 
+/**
+ * Sticky mini-player (ТЗ §5.1): visible only while something confirmed is playing on a
+ * remote target or on the phone itself. It shows Play/Stop actions and never a horizontal
+ * volume slider; a tap opens the station screen of the currently confirmed station.
+ */
 @Composable
-internal fun MiniPlayer(state: PlaybackState, toggle: () -> Unit, openPlayer: () -> Unit) {
-    val station = state.station ?: return
-    Surface(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clickable(onClick = openPlayer), color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .55f))) {
+internal fun LiveMiniPlayer(
+    remote: com.rockmobile.devicecontrol.LiveTargetPresentation?,
+    remoteTargetName: String?,
+    local: PlaybackState,
+    stations: List<Station>,
+    openStation: (String) -> Unit,
+    remotePlay: (String) -> Unit,
+    remoteStop: () -> Unit,
+    localToggle: () -> Unit,
+    localStop: () -> Unit,
+) {
+    val remoteActive = remote != null && (remote.status == com.rockmobile.devicecontrol.LivePlaybackStatusUi.Playing || remote.status == com.rockmobile.devicecontrol.LivePlaybackStatusUi.Buffering)
+    val localActive = local.station != null && local.isPlaying
+    if (!remoteActive && !localActive) return
+    val remoteStationId = remote?.confirmedStationId
+    val remoteTitle = com.rockmobile.devicecontrol.stationDisplayTitle(remoteStationId, stations)
+    val remoteStation = remoteStationId?.let { id -> stations.singleOrNull { it.id == id } }
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clickable(onClick = {
+            when {
+                remoteActive && remoteStationId != null -> openStation(remoteStationId)
+                localActive -> local.station?.let { openStation(it.id) }
+                else -> Unit
+            }
+        }),
+        color = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .55f)),
+    ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            StationLogo(station, Modifier.size(40.dp))
-            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                Text(station.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                Text(state.error ?: state.streamTitle ?: if (state.isPlaying) "Playing" else "Paused", color = if (state.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (remoteActive) {
+                StationLogoOrPlaceholder(remoteTitle, remoteStation, Modifier.size(40.dp))
+                Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                    Text(remoteTitle ?: "Станция", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                    val percent = remote.volumePercent
+                    Text(
+                        listOfNotNull(remoteTargetName, percent?.let { "$it%" }).joinToString(" · "),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(
+                    onClick = { remoteStationId?.let(remotePlay) },
+                    enabled = remoteStationId != null,
+                    modifier = Modifier.size(38.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                ) { Icon(Icons.Default.PlayArrow, "Играть", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(22.dp)) }
+                IconButton(onClick = remoteStop, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Stop, "Остановить", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+            } else {
+                val station = local.station ?: return@Row
+                StationLogo(station, Modifier.size(40.dp))
+                Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                    Text(station.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        local.error ?: local.streamTitle ?: "Этот телефон",
+                        color = if (local.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(onClick = localToggle, modifier = Modifier.size(38.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) {
+                    Icon(if (local.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (local.isPlaying) "Пауза" else "Играть", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(22.dp))
+                }
+                IconButton(onClick = localStop, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Stop, "Остановить", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
             }
-            IconButton(onClick = toggle, modifier = Modifier.size(38.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) {
-                Icon(if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (state.isPlaying) "Pause" else "Play", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(22.dp))
-            }
-            Icon(Icons.Default.ChevronRight, "Open player", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            Icon(Icons.Default.ChevronRight, "Открыть экран станции", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
         }
+    }
+}
+
+/** Remote stations may be missing from the local catalogue; the tile then degrades to a letter. */
+@Composable
+private fun StationLogoOrPlaceholder(title: String?, station: Station?, modifier: Modifier = Modifier) {
+    if (station != null) StationLogo(station, modifier)
+    else Box(modifier.clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+        Text(title?.firstOrNull()?.uppercase() ?: "?", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -349,18 +411,15 @@ private fun StationRow(
     current: Boolean,
     index: Int,
     favourite: Boolean,
-    play: () -> Unit,
+    openStation: () -> Unit,
     toggleFavourite: () -> Unit,
-    devicePlaySupport: DevicePlaySupport = DevicePlaySupport(false),
-    commandInFlight: Boolean = false,
-    onPlayOnDevice: () -> Unit = {},
 ) {
     val rowColor = when {
         current -> MaterialTheme.colorScheme.primary
         index % 2 == 1 -> MaterialTheme.colorScheme.background.copy(alpha = .32f)
         else -> MaterialTheme.colorScheme.surface
     }
-    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(rowColor).clickable(onClick = play).padding(vertical = 7.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(rowColor).clickable(onClick = openStation).padding(vertical = 7.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         StationLogo(station, Modifier.size(38.dp))
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1.5f)) {
@@ -369,33 +428,7 @@ private fun StationRow(
         }
         Text(station.tags.joinToString(", "), color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 5.dp))
         Text(listOfNotNull(station.bitrateKbps?.let { "$it k" }, station.codec).joinToString(" / ").ifBlank { "—" }, color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(.75f))
-        IconButton(onClick = play, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.PlayArrow, "Play ${station.name}", tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary) }
-        IconButton(
-            onClick = onPlayOnDevice,
-            enabled = devicePlaySupport.supported && !commandInFlight,
-            modifier = Modifier.size(36.dp),
-        ) {
-            if (commandInFlight) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                    color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-                )
-            } else {
-                val targetName = devicePlaySupport.target?.name ?: "устройстве"
-                val desc = if (devicePlaySupport.supported) "Играть на «$targetName»" else "Играть на устройстве: ${devicePlaySupport.reason ?: "недоступно"}"
-                Icon(
-                    Icons.Default.Speaker,
-                    contentDescription = desc,
-                    tint = if (devicePlaySupport.supported) {
-                        if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
-                    } else {
-                        if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                    },
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
+        IconButton(onClick = openStation, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.PlayArrow, "Открыть станцию ${station.name}", tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary) }
         IconButton(onClick = toggleFavourite, modifier = Modifier.size(36.dp)) { Text(if (favourite) "★" else "☆", color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium) }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .45f))

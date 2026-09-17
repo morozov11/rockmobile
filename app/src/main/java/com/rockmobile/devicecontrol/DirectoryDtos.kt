@@ -27,7 +27,29 @@ internal data class DirectoryEntryDto(
     val capabilities: CapabilitiesDto,
     val presence: PresenceDto,
     @SerialName("state_freshness") val freshness: FreshnessDto,
+    /**
+     * Owner-scoped runtime-state projection. Absent (not null) when the target has not
+     * published state or the caller lacks the state scope; the codec keeps unknown nested
+     * keys tolerant so later server additions never break directory decoding.
+     */
+    @SerialName("runtime_state") val runtimeState: RuntimeStateDto? = null,
 )
+
+@Serializable internal data class RuntimeStateDto(
+    @SerialName("state_revision") val stateRevision: Long,
+    @SerialName("observed_at") val observedAt: String,
+    @SerialName("received_at") val receivedAt: String? = null,
+    val state: DeviceRuntimeStateDto? = null,
+)
+@Serializable internal data class DeviceRuntimeStateDto(
+    val playback: PlaybackRuntimeStateDto? = null,
+    val volume: VolumeRuntimeStateDto? = null,
+)
+@Serializable internal data class PlaybackRuntimeStateDto(
+    val status: String,
+    @SerialName("station_id") val stationId: String? = null,
+)
+@Serializable internal data class VolumeRuntimeStateDto(val level: Int, val muted: Boolean)
 
 @Serializable internal data class CapabilitiesDto(val revision: Long, val items: List<CapabilityDto>)
 /**

@@ -1,15 +1,33 @@
 # RockMobile status
 
-## RM-4 — authoritative now-playing and volume UI — planned (2026-09-17)
+## RM-4 — Station-First authoritative live playback UI (implemented locally, 2026-09-17)
 
-The next UI iteration will render the selected station, playback status and
-volume from fresh revisioned RockCast state, with an explicit pending command
-indicator while the device has not confirmed the requested change. It will add
-the target-aware station action, shared mini-player and Device now-playing card
-without a second command path. The server-owned specification, mockup and test
-gates are in
-[`rockmobile-rockcast-live-control.md`](../../rockserver/docs/roadmap/rockmobile-rockcast-live-control.md).
-Cast and relay actions remain excluded pending RS-7.
+Navigation now starts from music, not from devices. The station catalogue
+(`StationsScreen`) is a clean searchable list whose rows open one station screen;
+per-device playback buttons were removed from the rows. `StationPlayerScreen`
+renders the station hero card, an output-device selector (`Играть на: [ RockCast ·
+В сети ▼ ]` / `Этот телефон`, with a directory chooser and per-target
+online/offline + freshness reasons), a live on-air indicator without any
+seek/timeline, a capability-driven transport (`|◀`, accent `▶ Play`, `⏹`, `▶|`;
+Pause appears only for targets advertising the `pause` action — RockCast does
+not), and the selected target's volume card with drag isolation and a single
+`volume.set_volume` commit on release (`Применяем…` until the device echo).
+
+Presentation truth comes from one shared `LivePlaybackStore`/`LivePlaybackReducer`
+fed by the directory `runtime_state` projection (RS-8) and the existing command
+lifecycle: `lastConfirmedState` and `pendingIntent` are kept separate, terminal
+`succeeded` alone stays `Ожидаем подтверждения…`, a fresher state with another
+`station_id` immediately cancels the pending intent as an external override, an
+absent `runtime_state` degrades to `Unknown` (never fabricated `stopped`/`0%`),
+and a station missing from the catalogue falls back to `Станция <id>`. The sticky
+`LiveMiniPlayer` shows only confirmed remote or local phone playback and opens the
+confirmed station screen; dispatch refusals (offline/stale/no scope/capability)
+surface their reason with a manual retry only.
+
+Verified locally: `compileDebugKotlin`, `testDebugUnitTest` (129 tests, 0 failed,
+including 15 reducer tests covering the ТЗ §4.4 matrix), `lintDebug`, and
+`git diff --check`. Physical USB acceptance (Phase 4) is still pending and is not
+claimed here. Relay/Chromecast controls and raw stream URLs remain out of scope.
 
 ## RC-3 — live RockCast control accepted from USB-connected phone (2026-09-17)
 

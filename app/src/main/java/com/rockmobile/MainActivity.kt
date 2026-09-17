@@ -29,9 +29,14 @@ import com.rockmobile.settings.SettingsRepository
 import com.rockmobile.settings.UnavailableVoiceStationStore
 import com.rockmobile.data.personal.PersonalDataStore
 import com.rockmobile.ui.stations.StationsScreen
+import com.rockmobile.ui.stations.StationsUiState
 import com.rockmobile.ui.stations.StationsViewModel
-import com.rockmobile.ui.stations.PlayerScreen
+import com.rockmobile.ui.stations.StationPlayerScreen
 import com.rockmobile.devicecontrol.DeviceControlScreen
+import com.rockmobile.devicecontrol.LivePlaybackStatusUi
+import com.rockmobile.devicecontrol.RemoteCommand
+import com.rockmobile.devicecontrol.TargetDirectoryState
+import com.rockmobile.devicecontrol.presentTarget
 import com.rockmobile.ui.theme.RockmobileTheme
 import com.rockmobile.voice.AndroidVoiceRecorder
 import com.rockmobile.voice.RockserverVoiceClient
@@ -85,50 +90,33 @@ class MainActivity : ComponentActivity() {
             val personal = personalData.state.collectAsStateWithLifecycle().value
             val playback = androidx.compose.runtime.remember { PlaybackController(this, unavailableVoiceStations) }
             val snackbarHostState = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
-            val playOnDeviceAction: (com.rockmobile.domain.model.Station) -> Unit = { station ->
-                val support = com.rockmobile.devicecontrol.checkDevicePlaySupport(targetDirectoryState)
-                val target = support.target
-                val command = com.rockmobile.devicecontrol.buildPlayStationCommand(station, target)
-                if (command == null || !support.supported) {
-                    lifecycleScope.launch {
-                        snackbarHostState.showSnackbar(support.reason ?: "Воспроизведение на устройстве недоступно")
-                    }
-                } else {
-                    val commandId = targetDirectory.dispatch(command)
-                    if (commandId == null) {
-                        lifecycleScope.launch {
-                            val result = snackbarHostState.showSnackbar(
-                                message = "Не удалось отправить команду на «${target?.name ?: "устройство"}»",
-                                actionLabel = "Повторить",
-                            )
-                            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                                targetDirectory.dispatch(command)
-                            }
-                        }
-                    }
+            val liveStore = targetDirectory.live
+            val liveState = liveStore.state.collectAsStateWithLifecycle().value
+            val catalogue = (state as? StationsUiState.Content)?.catalogue?.stations ?: emptyList()
+            val availableDirectory = targetDirectoryState as? TargetDirectoryState.Available
+            val selectedTarget = availableDirectory?.selectedTarget
+            val selectedPresentation = liveState.presentTarget(selectedTarget?.id)
+            val miniRemote = liveState.presentTarget(null)
+
+            // Manual retry only: a failed remote command surfaces once with the blocking reason.
+            var lastFailureKey by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+            androidx.compose.runtime.LaunchedEffect(liveState.lastFailure) {
+                val failure = liveState.lastFailure ?: return@LaunchedEffect
+                val key = failure.commandId ?: "rejected:${failure.message}:${failure.stationId}"
+                if (key == lastFailureKey) return@LaunchedEffect
+                lastFailureKey = key
+                val result = snackbarHostState.showSnackbar(failure.message, actionLabel = failure.stationId?.let { "Повторить" })
+                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed && failure.stationId != null) {
+                    liveStore.requestPlay(failure.stationId)
                 }
             }
-            var lastFailedCommandId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
-            androidx.compose.runtime.LaunchedEffect(targetCommands) {
-                val failed = targetCommands.values
-                    .filter { it.phase == com.rockmobile.devicecontrol.CommandPhase.Failed && it.commandId != lastFailedCommandId }
-                    .maxByOrNull { it.commandId }
-                if (failed != null) {
-                    lastFailedCommandId = failed.commandId
-                    val result = snackbarHostState.showSnackbar(
-                        message = failed.detail ?: "Команда на устройстве не выполнена",
-                        actionLabel = "Повторить",
-                    )
-                    if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                        val stationId = failed.actionKey.removePrefix("station.play_station:")
-                        val stationToRetry = (state as? com.rockmobile.ui.stations.StationsUiState.Content)?.catalogue?.stations?.find { it.id == stationId }
-                            ?: playback.state.value.station?.takeIf { it.id == stationId }
-                        if (stationToRetry != null) {
-                            playOnDeviceAction(stationToRetry)
-                        }
-                    }
-                }
+            androidx.compose.runtime.LaunchedEffect(liveState.overrideNotice) {
+                val notice = liveState.overrideNotice ?: return@LaunchedEffect
+                val targetName = availableDirectory?.targets?.singleOrNull { it.id == notice.targetId }?.name
+                snackbarHostState.showSnackbar("На «${targetName ?: "устройство"}» включили другую станцию")
+                liveStore.consumeOverrideNotice()
             }
+
             val voice = androidx.compose.runtime.remember(account) {
                 VoiceCommandController(
                     AndroidVoiceRecorder(this), RockserverVoiceClient(), settings::rockserverUrl,
@@ -145,22 +133,58 @@ class MainActivity : ComponentActivity() {
             val microphonePermission = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
                 voice.permissionResult(granted, !granted && !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO))
             }
-            var playerScreen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+            var stationPlayerStationId by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
             var devicesScreen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
             var accountOpen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+            var phoneOutput by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
             androidx.compose.runtime.DisposableEffect(Unit) { onDispose { voice.cancel(); playback.release() } }
             val playbackState = playback.state.collectAsStateWithLifecycle().value
             val voiceState = voice.state.collectAsStateWithLifecycle().value
-            if (playerScreen) PlayerScreen(
-                state = playbackState,
-                back = { playerScreen = false },
-                toggle = playback::toggle,
-                previous = playback::skipToPrevious,
-                next = playback::skipToNext,
-                retry = playback::retry,
-                targetDirectoryState = targetDirectoryState,
+
+            // An externally confirmed station on the selected target expands the open station
+            // screen to what is actually playing (ТЗ §5.2, matrix §4.4 external override).
+            androidx.compose.runtime.LaunchedEffect(selectedPresentation?.confirmedStationId, selectedPresentation?.status) {
+                val confirmedId = selectedPresentation?.confirmedStationId
+                val openId = stationPlayerStationId
+                if (openId != null && confirmedId != null && openId != confirmedId &&
+                    selectedPresentation.status == LivePlaybackStatusUi.Playing && !phoneOutput
+                ) {
+                    stationPlayerStationId = confirmedId
+                }
+            }
+
+            val openStation: (String) -> Unit = { stationId -> stationPlayerStationId = stationId }
+            val playLocal: (com.rockmobile.domain.model.Station, List<com.rockmobile.domain.model.Station>) -> Unit =
+                { station, queue -> personalData.recordPlay(station, "catalog"); playback.play(station, queue) }
+            val playerStation = stationPlayerStationId?.let { id -> catalogue.singleOrNull { it.id == id } }
+            val playerStationFavourite = stationPlayerStationId?.let { id -> personal.favourites.any { it.stationId == id } } ?: false
+            if (stationPlayerStationId != null) StationPlayerScreen(
+                stationId = stationPlayerStationId!!,
+                stations = catalogue,
+                favourite = playerStationFavourite,
+                back = { stationPlayerStationId = null },
+                toggleFavourite = {
+                    catalogue.singleOrNull { it.id == stationPlayerStationId }?.let { personalData.toggleFavourite(it) }
+                },
+                phoneOutput = phoneOutput,
+                selectPhoneOutput = { phoneOutput = true },
+                selectTargetOutput = { targetId -> phoneOutput = false; targetDirectory.select(targetId) },
+                directory = targetDirectoryState,
+                live = liveState,
+                localPlayback = playbackState,
                 commands = targetCommands,
-                onPlayOnDevice = playOnDeviceAction,
+                playRemote = { stationId -> liveStore.requestPlay(stationId) },
+                stopRemote = { liveStore.requestStop() },
+                pauseRemote = { targetDirectory.dispatch(RemoteCommand.Pause) },
+                setMuteRemote = { muted -> targetDirectory.dispatch(RemoteCommand.SetMute(muted)) },
+                playLocal = playLocal,
+                toggleLocal = playback::toggle,
+                stopLocal = playback::stop,
+                previousLocal = playback::skipToPrevious,
+                nextLocal = playback::skipToNext,
+                onVolumeDragStart = { selectedTarget?.let { target -> liveStore.beginVolumeDrag(target.id) } },
+                onVolumeDragChange = liveStore::updateVolumeDrag,
+                onVolumeDragFinish = liveStore::finishVolumeDrag,
                 snackbarHostState = snackbarHostState,
             )
             else if (devicesScreen) DeviceControlScreen(
@@ -179,8 +203,9 @@ class MainActivity : ComponentActivity() {
                 voice = voiceState,
                 retry = model::retryRockserver,
                 updateFilters = model::updateFilters,
-                play = { station, queue -> personalData.recordPlay(station, "catalog"); playback.play(station, queue) },
+                play = playLocal,
                 toggle = playback::toggle,
+                localStop = playback::stop,
                 onVoice = {
                     if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) voice.start()
                     else { voice.requestPermission(); microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
@@ -188,16 +213,20 @@ class MainActivity : ComponentActivity() {
                 onFinishVoice = voice::finishRecording,
                 onCancelVoice = voice::cancel,
                 onDismissVoice = voice::dismiss,
-                openPlayer = { playerScreen = true },
+                openStation = openStation,
                 personal = personal,
                 toggleFavourite = { station -> personalData.toggleFavourite(station) },
                 openAccount = { account.ensureSessionVisible(); accountOpen = true },
                 openDevices = { devicesScreen = true },
                 accountConnected = accountConnected,
                 clearHistory = personalData::clearHistory,
-                targetDirectoryState = targetDirectoryState,
-                commands = targetCommands,
-                onPlayOnDevice = playOnDeviceAction,
+                liveRemote = miniRemote,
+                liveRemoteTargetName = miniRemote?.let { remote -> availableDirectory?.targets?.singleOrNull { it.id == remote.targetId }?.name },
+                remotePlay = { stationId ->
+                    val playingTarget = miniRemote?.targetId
+                    liveStore.requestPlay(stationId, playingTarget)
+                },
+                remoteStop = { liveStore.requestStop(miniRemote?.targetId) },
                 snackbarHostState = snackbarHostState,
             )
             if (accountOpen) AccountDialog(account, settings.rockserverUrl()) { accountOpen = false }

@@ -9,10 +9,32 @@ data class ControllerTarget(
     val capabilities: Set<ControlCapability>,
     val presence: TargetPresence,
     val freshness: TargetFreshness,
+    val runtimeState: TargetRuntimeState = TargetRuntimeState.Unknown,
 ) {
     val usable: Boolean get() = DeviceRole.Player in roles && presence == TargetPresence.Online && freshness == TargetFreshness.Fresh
     val knownCapabilities: Set<KnownCapability> get() = capabilities.map { it.kind }.toSet()
     inline fun <reified T : ControlCapability> capability(): T? = capabilities.filterIsInstance<T>().singleOrNull()
+}
+
+/** Device-reported playback status vocabulary from the control protocol v1. */
+enum class PlaybackStatus { Idle, Buffering, Playing, Paused, Stopped, Error }
+
+/**
+ * Authoritative runtime state mirrored from the directory `runtime_state` projection.
+ * Absence is [Unknown]: the UI must never fabricate `stopped` or `0%` values from it.
+ * An unparsable status or out-of-range volume degrades to a null part, never a crash.
+ */
+sealed interface TargetRuntimeState {
+    data object Unknown : TargetRuntimeState
+    data class Known(
+        val stateRevision: Long,
+        val observedAt: String,
+        val receivedAt: String?,
+        val playbackStatus: PlaybackStatus?,
+        val stationId: String?,
+        val volumeLevel: Int?,
+        val muted: Boolean?,
+    ) : TargetRuntimeState
 }
 
 enum class DeviceRole { Controller, Player, DisplaySurface, VoiceEndpoint, SensorSource, Actuator, IntegrationAdapter, Unknown }
@@ -60,8 +82,28 @@ internal fun DirectoryEntryDto.toTarget(): ControllerTarget {
         capabilities = capabilities.items.mapNotNull(CapabilityDto::toKnownCapability).toSet(),
         presence = when (presence.status) { "online" -> TargetPresence.Online; "offline" -> TargetPresence.Offline; else -> throw IllegalArgumentException("Unknown presence") },
         freshness = when (freshness.status) { "fresh" -> TargetFreshness.Fresh; "stale" -> TargetFreshness.Stale; "unknown" -> TargetFreshness.Unknown; else -> throw IllegalArgumentException("Unknown freshness") },
+        runtimeState = runtimeState.toRuntimeState(),
     )
 }
+
+/** Absence, a non-monotonic revision, unknown status or out-of-range volume degrade to Unknown parts. */
+private fun RuntimeStateDto?.toRuntimeState(): TargetRuntimeState {
+    val dto = this ?: return TargetRuntimeState.Unknown
+    if (dto.stateRevision < 1) return TargetRuntimeState.Unknown
+    val playback = dto.state?.playback
+    val volume = dto.state?.volume
+    return TargetRuntimeState.Known(
+        stateRevision = dto.stateRevision,
+        observedAt = dto.observedAt,
+        receivedAt = dto.receivedAt,
+        playbackStatus = playback?.status?.let(::playbackStatus),
+        stationId = playback?.stationId,
+        volumeLevel = volume?.level?.takeIf { it in 0..100 },
+        muted = volume?.muted,
+    )
+}
+
+private fun playbackStatus(value: String) = PlaybackStatus.entries.singleOrNull { it.name.equals(value, ignoreCase = true) }
 
 private fun role(value: String) = when (value) {
     "controller" -> DeviceRole.Controller; "player" -> DeviceRole.Player; "display_surface" -> DeviceRole.DisplaySurface
