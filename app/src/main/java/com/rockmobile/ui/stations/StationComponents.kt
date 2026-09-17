@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
@@ -140,7 +141,7 @@ internal fun VoiceStatusBar(state: VoiceUiState, cancel: () -> Unit, dismiss: ()
 }
 
 @Composable
-internal fun RockHeader(retry: () -> Unit, openAccount: () -> Unit, accountConnected: Boolean = false) {
+internal fun RockHeader(retry: () -> Unit, openAccount: () -> Unit, openDevices: () -> Unit, accountConnected: Boolean = false) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(painter = painterResource(R.mipmap.rockmobile_icon), contentDescription = rockMobileLogoDescription(), modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.small))
@@ -148,6 +149,13 @@ internal fun RockHeader(retry: () -> Unit, openAccount: () -> Unit, accountConne
             Text(rockMobileTitle(), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
         Row {
+            IconButton(onClick = openDevices) {
+                Icon(
+                    Icons.Default.Devices,
+                    "Устройства",
+                    tint = if (accountConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             IconButton(onClick = openAccount) {
                 Icon(
                     Icons.Default.Person,

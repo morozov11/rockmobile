@@ -1,5 +1,31 @@
 # RockMobile task log
 
+## RM-4 — state-driven RockCast now-playing UI (planned 2026-09-17)
+
+- Scope: consume the existing directory runtime-state projection in one shared
+  presentation store; show confirmed station/playback/volume in the station
+  picker, mini-player and Device screen. Keep pending intent separate, commit
+  volume on gesture completion, and reconcile all values from device state.
+- Acceptance: never label a station as playing from a tap or `succeeded` result
+  alone; require fresh matching `station_id` plus buffering/playing state. Cover
+  mismatched station, command failure, stale/offline, missing catalog entry,
+  reconnect, and externally changed volume in unit/UI tests.
+- Canonical design and dependency gates:
+  [`rockmobile-rockcast-live-control.md`](../../rockserver/docs/roadmap/rockmobile-rockcast-live-control.md).
+- Status: **planned.** Relay/Chromecast controls and raw stream URLs are out of scope.
+
+## RC-3 — live RockCast control accepted (2026-09-17)
+
+- Root cause: RockCast sent a changed manifest with an already-stored revision 2;
+  RockServer correctly returned `registration_rejected`. The target was present in
+  inventory but could not become online.
+- Fix and safety: manifest revision is now 4. The UI exposes `Остановить` when
+  `media.playback.stop` is advertised. It no longer receives premature relay/Cast
+  controls, whose server routing remains pending in RS-7.
+- Live acceptance: with the debug APK installed on the USB-connected phone, the
+  refreshed RockCast target was online, explicitly selected, and one `playback.stop`
+  completed as `Состояние плеера подтверждено.`
+
 ## RM-1 — play catalog stations on a device-control target (2026-09-09)
 
 - Scope: play catalog stations on an explicitly selected usable device-control target (player role,

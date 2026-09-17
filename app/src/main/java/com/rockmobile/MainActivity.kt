@@ -31,6 +31,7 @@ import com.rockmobile.data.personal.PersonalDataStore
 import com.rockmobile.ui.stations.StationsScreen
 import com.rockmobile.ui.stations.StationsViewModel
 import com.rockmobile.ui.stations.PlayerScreen
+import com.rockmobile.devicecontrol.DeviceControlScreen
 import com.rockmobile.ui.theme.RockmobileTheme
 import com.rockmobile.voice.AndroidVoiceRecorder
 import com.rockmobile.voice.RockserverVoiceClient
@@ -145,6 +146,7 @@ class MainActivity : ComponentActivity() {
                 voice.permissionResult(granted, !granted && !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO))
             }
             var playerScreen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+            var devicesScreen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
             var accountOpen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
             androidx.compose.runtime.DisposableEffect(Unit) { onDispose { voice.cancel(); playback.release() } }
             val playbackState = playback.state.collectAsStateWithLifecycle().value
@@ -160,6 +162,16 @@ class MainActivity : ComponentActivity() {
                 commands = targetCommands,
                 onPlayOnDevice = playOnDeviceAction,
                 snackbarHostState = snackbarHostState,
+            )
+            else if (devicesScreen) DeviceControlScreen(
+                state = targetDirectoryState,
+                commands = targetCommands,
+                receivers = targetDirectory.receivers.collectAsStateWithLifecycle().value,
+                back = { devicesScreen = false },
+                refresh = targetDirectory::refresh,
+                select = targetDirectory::select,
+                dispatch = targetDirectory::dispatch,
+                openAccount = { account.ensureSessionVisible(); accountOpen = true },
             )
             else StationsScreen(
                 state = state,
@@ -180,6 +192,7 @@ class MainActivity : ComponentActivity() {
                 personal = personal,
                 toggleFavourite = { station -> personalData.toggleFavourite(station) },
                 openAccount = { account.ensureSessionVisible(); accountOpen = true },
+                openDevices = { devicesScreen = true },
                 accountConnected = accountConnected,
                 clearHistory = personalData::clearHistory,
                 targetDirectoryState = targetDirectoryState,
@@ -187,7 +200,7 @@ class MainActivity : ComponentActivity() {
                 onPlayOnDevice = playOnDeviceAction,
                 snackbarHostState = snackbarHostState,
             )
-            if (accountOpen) AccountDialog(account, settings.rockserverUrl(), targetDirectory) { accountOpen = false }
+            if (accountOpen) AccountDialog(account, settings.rockserverUrl()) { accountOpen = false }
             }
         }
     }

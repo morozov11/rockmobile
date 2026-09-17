@@ -1,5 +1,28 @@
 # RockMobile status
 
+## RM-4 — authoritative now-playing and volume UI — planned (2026-09-17)
+
+The next UI iteration will render the selected station, playback status and
+volume from fresh revisioned RockCast state, with an explicit pending command
+indicator while the device has not confirmed the requested change. It will add
+the target-aware station action, shared mini-player and Device now-playing card
+without a second command path. The server-owned specification, mockup and test
+gates are in
+[`rockmobile-rockcast-live-control.md`](../../rockserver/docs/roadmap/rockmobile-rockcast-live-control.md).
+Cast and relay actions remain excluded pending RS-7.
+
+## RC-3 — live RockCast control accepted from USB-connected phone (2026-09-17)
+
+The paired Windows RockCast target was initially offline because RockServer rejected
+its changed manifest at the already-used revision 2 (`registration_rejected`), despite
+successful native-session authentication and protocol negotiation. RockCast now
+publishes manifest revision 4 and the target becomes online after a directory refresh.
+The USB-connected Android phone selected the target and received `Состояние плеера
+подтверждено.` after one standard `playback.stop` command. The Devices UI now exposes
+that advertised Stop action. RockCast no longer advertises `relay` or `chromecast`
+controls before the server implements those command families (RS-7), preventing a
+controller from offering actions that cannot complete.
+
 ## RM-1 play catalog stations on a device-control target (local implementation, 2026-09-09)
 
 RockMobile now allows dispatching `station.play_station` to an explicitly selected, usable

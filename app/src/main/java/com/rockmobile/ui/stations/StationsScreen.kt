@@ -47,6 +47,7 @@ fun StationsScreen(
     personal: PersonalData,
     toggleFavourite: (Station) -> Unit,
     openAccount: () -> Unit,
+    openDevices: () -> Unit,
     accountConnected: Boolean = false,
     clearHistory: () -> Unit,
     targetDirectoryState: TargetDirectoryState = TargetDirectoryState.Inactive,
@@ -71,7 +72,7 @@ fun StationsScreen(
                     .imePadding()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
-                RockHeader(retry, openAccount, accountConnected)
+                RockHeader(retry, openAccount, openDevices, accountConnected)
                 Spacer(Modifier.height(6.dp))
                 when (state) {
                     StationsUiState.Loading -> LoadingState()
