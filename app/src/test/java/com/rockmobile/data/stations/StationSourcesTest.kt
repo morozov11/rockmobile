@@ -83,8 +83,8 @@ class StationSourcesTest {
 
     @Test fun remote_search_usesPublicLimitCap() {
         val transport = CapturingTransport(200, validJson)
-        RockserverApi(transport).search("https://alex.vault57.ru", "", "rock")
-        assertEquals("https://alex.vault57.ru/api/v1/search", transport.url)
+        RockserverApi(transport).search("https://rockplatform.win", "", "rock")
+        assertEquals("https://rockplatform.win/api/v1/search", transport.url)
         assertEquals("", transport.bearerToken)
         assertEquals(20, org.json.JSONObject(transport.body).getInt("limit"))
     }

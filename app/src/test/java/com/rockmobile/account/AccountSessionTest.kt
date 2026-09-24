@@ -27,11 +27,11 @@ import java.time.Instant
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountSessionTest {
     @Test fun rockmobileReturnAppLink_accepts_only_the_exact_credentialFreeRoute() {
-        assertTrue(isRockmobileReturnTarget("https", "alex.vault57.ru", "/return/rockmobile", null, null))
-        assertFalse(isRockmobileReturnTarget("https", "alex.vault57.ru", "/", null, "secret=synthetic"))
-        assertFalse(isRockmobileReturnTarget("https", "alex.vault57.ru", "/return/rockmobile", "code=AB12CD34", null))
-        assertFalse(isRockmobileReturnTarget("https", "alex.vault57.ru", "/return/rockmobile", null, "secret=synthetic"))
-        assertFalse(isRockmobileReturnTarget("https", "not-alex.vault57.ru", "/return/rockmobile", null, null))
+        assertTrue(isRockmobileReturnTarget("https", "rockplatform.win", "/return/rockmobile", null, null))
+        assertFalse(isRockmobileReturnTarget("https", "rockplatform.win", "/", null, "secret=synthetic"))
+        assertFalse(isRockmobileReturnTarget("https", "rockplatform.win", "/return/rockmobile", "code=AB12CD34", null))
+        assertFalse(isRockmobileReturnTarget("https", "rockplatform.win", "/return/rockmobile", null, "secret=synthetic"))
+        assertFalse(isRockmobileReturnTarget("https", "not-rockplatform.win", "/return/rockmobile", null, null))
     }
 
     @Test fun pairingQr_hasFourModuleQuietZone_integerScale_andSyntheticLink() {

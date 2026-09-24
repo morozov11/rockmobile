@@ -35,7 +35,7 @@ class SettingsRepository(context: Context) : com.rockmobile.devicecontrol.Target
 
     companion object {
         /** Public RockServer used by official Rockmobile releases. */
-        const val PRODUCTION_BASE_URL = "https://alex.vault57.ru"
+        const val PRODUCTION_BASE_URL = "https://rockplatform.win"
         /** Android emulator alias retained only for recognition of legacy installs. */
         const val DEFAULT_EMULATOR_URL = "http://10.0.2.2:3000"
         /** Former laptop LAN default retained only for recognition of legacy installs. */

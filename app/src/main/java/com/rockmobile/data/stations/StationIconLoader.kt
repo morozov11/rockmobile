@@ -13,8 +13,14 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Direct station icon loading for the pre-RockServer-icon MVP.
+ * Station icon loading for server-owned icons and the offline-catalog fallback.
  * Network I/O, decode, and disk cache stay off the UI thread; callers pass an already-resolved [Station].
+ *
+ * RockServer stations carry a nullable `favicon_url` that is a same-origin path
+ * (for example `/api/v1/stations/{id}/icon`); it is resolved against the supplied
+ * RockServer base URL, so those icons are fetched from RockServer only. The
+ * direct homepage `/favicon.ico` fallback remains only for stations without a
+ * server icon URL (the bundled offline catalog); no homepage HTML is scraped.
  */
 object StationIconLoader {
     private const val CACHE_MAGIC = "RMSTICON1"
@@ -23,9 +29,22 @@ object StationIconLoader {
     private const val MAX_SOURCE_BYTES = 16 * 1024
     private const val MAX_ICON_SIDE = 64
 
-    /** Only URL the MVP may fetch: explicit favicon/logo, else conventional `/favicon.ico` on the official homepage. */
-    fun sourceUrl(station: Station): String? {
-        validHttpUrl(station.faviconUrl)?.let { return it }
+    /**
+     * Only URL icon loading may fetch: a server-owned relative path resolved against [serverBase],
+     * an explicit absolute favicon/logo URL, else conventional `/favicon.ico` on the official homepage.
+     */
+    fun sourceUrl(station: Station, serverBase: String? = null): String? {
+        station.faviconUrl?.let { favicon ->
+            validHttpUrl(favicon)?.let { return it }
+            val base = serverBase?.trim()?.trimEnd('/')
+            if (base != null && validHttpUrl(base) != null) {
+                val path = favicon.trim()
+                if (path.startsWith("/") && !path.startsWith("//")) {
+                    return runCatching { base + path }.getOrNull()?.takeIf { validHttpUrl(it) != null }
+                }
+            }
+            return null
+        }
         val homepage = validHttpUrl(station.homepageUrl) ?: return null
         return runCatching {
             val base = URI(homepage)
@@ -42,8 +61,8 @@ object StationIconLoader {
     }
 
     /** Load a valid cached thumbnail or fetch/decode/cache once. Failures return null (letter tile). */
-    fun loadOrFetch(context: Context, station: Station): Bitmap? {
-        val source = sourceUrl(station) ?: return null
+    fun loadOrFetch(context: Context, station: Station, serverBase: String? = null): Bitmap? {
+        val source = sourceUrl(station, serverBase) ?: return null
         val root = File(context.cacheDir, "station-icons")
         val path = File(root, "${cacheStem(station)}.bin")
         readCache(path, source)?.let { return it }

@@ -33,7 +33,7 @@ AccountScreen ── TargetDirectoryViewModel ── TargetDirectoryRepository
 
 ## Официальный RockServer
 
-Release-клиент использует `https://alex.vault57.ru`. Публичные `POST /v1/search` и `wss://…/v1/voice/stream` идут без Bearer. Legacy LAN/emulator URL и старый bootstrap-токен scrub'ятся при старте `SettingsRepository`; native account tokens живут только в Keystore-защищённом хранилище.
+Release-клиент использует `https://rockplatform.win`. Публичные `POST /v1/search` и `wss://…/v1/voice/stream` идут без Bearer. Legacy LAN/emulator URL и старый bootstrap-токен scrub'ятся при старте `SettingsRepository`; native account tokens живут только в Keystore-защищённом хранилище.
 
 ## Аккаунт и pairing
 

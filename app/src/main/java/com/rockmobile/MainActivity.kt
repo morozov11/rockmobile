@@ -257,7 +257,7 @@ internal fun isRockmobileReturnTarget(
     query: String?,
     fragment: String?,
 ): Boolean =
-    scheme == "https" && host == "alex.vault57.ru" && path == "/return/rockmobile" &&
+    scheme == "https" && host == "rockplatform.win" && path == "/return/rockmobile" &&
         query == null && fragment == null
 
 private class StationsViewModelFactory(

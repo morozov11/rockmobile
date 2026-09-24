@@ -16,7 +16,7 @@ Android-клиент интернет-радио для RockCast. Стартов
 
 - Android 8.0 (API 26) или новее.
 - Android SDK с `compileSdk 36` для сборки.
-- Для server-каталога и голосового поиска — сеть до официального Rockserver `https://alex.vault57.ru`.
+- Для server-каталога и голосового поиска — сеть до официального Rockserver `https://rockplatform.win`.
 
 ## Быстрый старт для разработки
 
@@ -45,7 +45,7 @@ APK: `app/build/outputs/apk/debug/`.
 
 ## Rockserver
 
-Официальные сборки используют публичный RockServer `https://alex.vault57.ru` без пользовательской настройки URL/токена. Публичные операции `/v1/*` вызываются без Bearer; legacy LAN-дефолты и bootstrap-токен сбрасываются при загрузке настроек.
+Официальные сборки используют публичный RockServer `https://rockplatform.win` без пользовательской настройки URL/токена. Публичные операции `/v1/*` вызываются без Bearer; legacy LAN-дефолты и bootstrap-токен сбрасываются при загрузке настроек.
 
 | Назначение | Контракт |
 | --- | --- |
@@ -55,7 +55,7 @@ APK: `app/build/outputs/apk/debug/`.
 
 Voice-сессия: `start` → `ready` → PCM-чанки ≤32 KiB → `commit`. Клиент принимает только структурированный и валидный результат со станцией и HTTP(S)-потоком; неизвестные или некорректные ответы не выполняются. HTTPS всегда мапится на WSS с сохранением TLS. Текстовый поиск использует фактический лимит RockServer `limit=20`.
 
-Адрес по умолчанию хранится в `SettingsRepository` как `https://alex.vault57.ru`. Публичные `/v1` операции каталога и voice вызываются без bearer; native account access/refresh tokens выдаются только pairing и хранятся в Android Keystore. Settings Screen — RM-005.
+Адрес по умолчанию хранится в `SettingsRepository` как `https://rockplatform.win`. Публичные `/v1` операции каталога и voice вызываются без bearer; native account access/refresh tokens выдаются только pairing и хранятся в Android Keystore. Settings Screen — RM-005.
 
 ## Каталог станций
 

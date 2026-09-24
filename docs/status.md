@@ -1,5 +1,27 @@
 # RockMobile status
 
+## RM-12 — rockplatform.win domain and server-owned station icons (implemented locally, 2026-09-24)
+
+RockServer production moved to `https://rockplatform.win`: the settings
+production base URL, the AndroidManifest account-return deep link, the
+`MainActivity` deep-link host check and their tests now use the new domain
+(old-domain entries in `docs/status.md` below are historical records). The
+server publishes a nullable same-origin `favicon_url` path
+(`/api/v1/stations/{id}/icon`) that the pre-server icon loader would have
+rejected as non-absolute.
+
+`StationIconLoader.sourceUrl` now resolves such relative paths against the
+resolved RockServer base URL (passed by `StationLogo` from
+`resolvedRockserverUrl(BuildConfig.DEBUG, BuildConfig.DEBUG_ROCKSERVER_URL)`),
+so RockServer stations fetch their icon from RockServer only. Protocol-relative
+(`//host/...`) and non-rooted sources are rejected; an absolute favicon URL
+(offline-catalog station) still wins; the homepage `/favicon.ico` fallback
+without scraping remains only for stations without a server icon URL. The
+bounded download/decode/cache and letter-tile placeholder are unchanged; WebP
+decodes through `BitmapFactory`. Checks: `gradlew test` and `gradlew
+assembleDebug` passed. Not yet exercised against the live server from a
+physical device.
+
 ## RM-4 — Station-First authoritative live playback UI (implemented locally, 2026-09-17)
 
 Navigation now starts from music, not from devices. The station catalogue

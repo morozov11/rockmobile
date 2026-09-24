@@ -1,5 +1,8 @@
 package com.rockmobile.ui.stations
 
+import com.rockmobile.BuildConfig
+import com.rockmobile.settings.resolvedRockserverUrl
+
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -438,8 +441,9 @@ private fun StationRow(
 @Composable
 internal fun StationLogo(station: Station, modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val serverBase = resolvedRockserverUrl(BuildConfig.DEBUG, BuildConfig.DEBUG_ROCKSERVER_URL)
     val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(initialValue = null, station.id, station.faviconUrl, station.homepageUrl) {
-        value = withContext(Dispatchers.IO) { StationIconLoader.loadOrFetch(context.applicationContext, station)?.asImageBitmap() }
+        value = withContext(Dispatchers.IO) { StationIconLoader.loadOrFetch(context.applicationContext, station, serverBase)?.asImageBitmap() }
     }
     Box(modifier.clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
         if (bitmap != null) Image(bitmap!!, contentDescription = "${station.name} logo", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)

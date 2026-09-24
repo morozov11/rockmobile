@@ -14,7 +14,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="alex.vault57.ru" android:path="/return/rockmobile" />
+                <data android:scheme="https" android:host="rockplatform.win" android:path="/return/rockmobile" />
             </intent-filter>
         </activity>
         <service android:name=".playback.RockmobileMediaSessionService" android:foregroundServiceType="mediaPlayback" android:exported="true">
