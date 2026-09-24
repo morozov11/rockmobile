@@ -117,6 +117,7 @@ class MainActivity : ComponentActivity() {
                 liveStore.consumeOverrideNotice()
             }
 
+            var phoneOutput by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(true) }
             val voice = androidx.compose.runtime.remember(account) {
                 VoiceCommandController(
                     AndroidVoiceRecorder(this), RockserverVoiceClient(), settings::rockserverUrl,
@@ -125,7 +126,11 @@ class MainActivity : ComponentActivity() {
                         override fun beginVoiceCapture() = playback.beginVoiceCapture()
                         override fun endVoiceCapture() = playback.endVoiceCapture()
                         override fun showCandidates(stations: List<com.rockmobile.domain.model.Station>) = model.showVoiceCandidates(stations)
-                        override fun play(station: com.rockmobile.domain.model.Station, queue: List<com.rockmobile.domain.model.Station>) { personalData.recordPlay(station, "remote"); playback.play(station, queue, fromVoiceResult = true) }
+                        override fun play(station: com.rockmobile.domain.model.Station, queue: List<com.rockmobile.domain.model.Station>) {
+                            phoneOutput = true
+                            personalData.recordPlay(station, "remote")
+                            playback.play(station, queue, fromVoiceResult = true)
+                        }
                     },
                     lifecycleScope,
                 )
@@ -136,7 +141,6 @@ class MainActivity : ComponentActivity() {
             var stationPlayerStationId by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
             var devicesScreen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
             var accountOpen by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
-            var phoneOutput by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
             androidx.compose.runtime.DisposableEffect(Unit) { onDispose { voice.cancel(); playback.release() } }
             val playbackState = playback.state.collectAsStateWithLifecycle().value
             val voiceState = voice.state.collectAsStateWithLifecycle().value
@@ -156,6 +160,11 @@ class MainActivity : ComponentActivity() {
             val openStation: (String) -> Unit = { stationId -> stationPlayerStationId = stationId }
             val playLocal: (com.rockmobile.domain.model.Station, List<com.rockmobile.domain.model.Station>) -> Unit =
                 { station, queue -> personalData.recordPlay(station, "catalog"); playback.play(station, queue) }
+            val playSelectedOutput: (com.rockmobile.domain.model.Station, List<com.rockmobile.domain.model.Station>) -> Unit =
+                { station, queue ->
+                    personalData.recordPlay(station, "catalog")
+                    if (phoneOutput) playback.play(station, queue) else liveStore.requestPlay(station.id)
+                }
             val playerStation = stationPlayerStationId?.let { id -> catalogue.singleOrNull { it.id == id } }
             val playerStationFavourite = stationPlayerStationId?.let { id -> personal.favourites.any { it.stationId == id } } ?: false
             if (stationPlayerStationId != null) StationPlayerScreen(
@@ -203,7 +212,7 @@ class MainActivity : ComponentActivity() {
                 voice = voiceState,
                 retry = model::retryRockserver,
                 updateFilters = model::updateFilters,
-                play = playLocal,
+                play = playSelectedOutput,
                 toggle = playback::toggle,
                 localStop = playback::stop,
                 onVoice = {

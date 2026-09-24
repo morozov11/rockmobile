@@ -290,6 +290,7 @@ internal fun StationTable(
     modifier: Modifier = Modifier,
     stations: List<Station>,
     currentStationId: String?,
+    play: (Station) -> Unit,
     openStation: (Station) -> Unit,
     favourites: Set<String>,
     toggleFavourite: (Station) -> Unit,
@@ -305,6 +306,7 @@ internal fun StationTable(
                         current = currentStationId == station.id,
                         index = index,
                         favourite = station.id in favourites,
+                        play = { play(station) },
                         openStation = { openStation(station) },
                         toggleFavourite = { toggleFavourite(station) },
                     )
@@ -414,6 +416,7 @@ private fun StationRow(
     current: Boolean,
     index: Int,
     favourite: Boolean,
+    play: () -> Unit,
     openStation: () -> Unit,
     toggleFavourite: () -> Unit,
 ) {
@@ -422,7 +425,7 @@ private fun StationRow(
         index % 2 == 1 -> MaterialTheme.colorScheme.background.copy(alpha = .32f)
         else -> MaterialTheme.colorScheme.surface
     }
-    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(rowColor).clickable(onClick = openStation).padding(vertical = 7.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(rowColor).clickable(onClick = play).padding(vertical = 7.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         StationLogo(station, Modifier.size(38.dp))
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1.5f)) {
@@ -431,7 +434,8 @@ private fun StationRow(
         }
         Text(station.tags.joinToString(", "), color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 5.dp))
         Text(listOfNotNull(station.bitrateKbps?.let { "$it k" }, station.codec).joinToString(" / ").ifBlank { "—" }, color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(.75f))
-        IconButton(onClick = openStation, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.PlayArrow, "Открыть станцию ${station.name}", tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary) }
+        IconButton(onClick = play, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.PlayArrow, "Включить станцию ${station.name}", tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary) }
+        IconButton(onClick = openStation, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.ChevronRight, "Открыть станцию ${station.name}", tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant) }
         IconButton(onClick = toggleFavourite, modifier = Modifier.size(36.dp)) { Text(if (favourite) "★" else "☆", color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium) }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .45f))

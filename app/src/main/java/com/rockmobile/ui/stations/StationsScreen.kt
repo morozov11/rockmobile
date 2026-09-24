@@ -32,7 +32,7 @@ import com.rockmobile.voice.VoiceUiState
 /**
  * Station catalog (ТЗ §5.1): search + quick genre/favourite chips, a music-focused station
  * list without per-device buttons, and a sticky mini-player fed by the same live state as
- * the station screen. Tapping a row opens that station's screen.
+ * the station screen. Tapping a row starts playback; its arrow opens station details.
  */
 @Composable
 fun StationsScreen(
@@ -108,6 +108,7 @@ fun StationsScreen(
                             modifier = Modifier.weight(1f),
                             stations = state.stations,
                             currentStationId = currentStationId,
+                            play = { station -> play(station, state.stations) },
                             openStation = { station -> openStation(station.id) },
                             favourites = personal.favourites.map { it.stationId }.toSet(),
                             toggleFavourite = toggleFavourite,
