@@ -75,7 +75,13 @@ class PlaybackController(
         }
         if (activeController.isPlaying) activeController.pause() else activeController.play()
     }
-    fun stop() { controller?.stop() }
+    fun stop() {
+        pendingPlay = null
+        pendingShouldPlay = false
+        awaitingVoiceStationStart = false
+        controller?.stop()
+        _state.value = _state.value.copy(isPlaying = false)
+    }
     /** Mutes local speaker output while listening, preventing the current station from keeping VAD active. */
     fun beginVoiceCapture() {
         val activeController = controller ?: return

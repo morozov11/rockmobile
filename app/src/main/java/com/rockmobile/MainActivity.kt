@@ -25,6 +25,7 @@ import com.rockmobile.data.stations.ExtendedCatalogStationSource
 import com.rockmobile.data.stations.FallbackLocalStationSource
 import com.rockmobile.data.stations.RockserverStationSource
 import com.rockmobile.playback.PlaybackController
+import com.rockmobile.playback.PlaybackState
 import com.rockmobile.settings.SettingsRepository
 import com.rockmobile.settings.UnavailableVoiceStationStore
 import com.rockmobile.data.personal.PersonalDataStore
@@ -51,6 +52,23 @@ import com.rockmobile.devicecontrol.DeviceControlDirectoryApi
 import com.rockmobile.devicecontrol.OkHttpDirectorySocketFactory
 import com.rockmobile.devicecontrol.TargetDirectoryRepository
 import com.rockmobile.devicecontrol.TargetDirectoryViewModel
+
+internal data class LocalPlaybackTransfer(
+    val localStationId: String,
+    val targetId: String,
+    val remoteStationId: String,
+)
+
+/** A local stream may stop only after this exact station is confirmed playing on the target. */
+internal fun localTransferConfirmed(
+    transfer: LocalPlaybackTransfer,
+    local: PlaybackState,
+    remote: com.rockmobile.devicecontrol.LiveTargetPresentation?,
+): Boolean =
+    local.isPlaying && local.station?.id == transfer.localStationId &&
+        remote?.targetId == transfer.targetId &&
+        remote.confirmedStationId == transfer.remoteStationId &&
+        remote.status == LivePlaybackStatusUi.Playing
 
 class MainActivity : ComponentActivity() {
     private var accountViewModel: AccountViewModel? = null
@@ -98,18 +116,6 @@ class MainActivity : ComponentActivity() {
             val selectedPresentation = liveState.presentTarget(selectedTarget?.id)
             val miniRemote = liveState.presentTarget(null)
 
-            // Manual retry only: a failed remote command surfaces once with the blocking reason.
-            var lastFailureKey by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
-            androidx.compose.runtime.LaunchedEffect(liveState.lastFailure) {
-                val failure = liveState.lastFailure ?: return@LaunchedEffect
-                val key = failure.commandId ?: "rejected:${failure.message}:${failure.stationId}"
-                if (key == lastFailureKey) return@LaunchedEffect
-                lastFailureKey = key
-                val result = snackbarHostState.showSnackbar(failure.message, actionLabel = failure.stationId?.let { "Повторить" })
-                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed && failure.stationId != null) {
-                    liveStore.requestPlay(failure.stationId)
-                }
-            }
             androidx.compose.runtime.LaunchedEffect(liveState.overrideNotice) {
                 val notice = liveState.overrideNotice ?: return@LaunchedEffect
                 val targetName = availableDirectory?.targets?.singleOrNull { it.id == notice.targetId }?.name
@@ -118,6 +124,7 @@ class MainActivity : ComponentActivity() {
             }
 
             var phoneOutput by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(true) }
+            var pendingLocalTransfer by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<LocalPlaybackTransfer?>(null) }
             val voice = androidx.compose.runtime.remember(account) {
                 VoiceCommandController(
                     AndroidVoiceRecorder(this), RockserverVoiceClient(), settings::rockserverUrl,
@@ -128,6 +135,7 @@ class MainActivity : ComponentActivity() {
                         override fun showCandidates(stations: List<com.rockmobile.domain.model.Station>) = model.showVoiceCandidates(stations)
                         override fun play(station: com.rockmobile.domain.model.Station, queue: List<com.rockmobile.domain.model.Station>) {
                             phoneOutput = true
+                            pendingLocalTransfer = null
                             personalData.recordPlay(station, "remote")
                             playback.play(station, queue, fromVoiceResult = true)
                         }
@@ -145,6 +153,35 @@ class MainActivity : ComponentActivity() {
             val playbackState = playback.state.collectAsStateWithLifecycle().value
             val voiceState = voice.state.collectAsStateWithLifecycle().value
 
+            val transfer = pendingLocalTransfer
+            val transferPresentation = transfer?.let { liveState.presentTarget(it.targetId) }
+            androidx.compose.runtime.LaunchedEffect(transfer, playbackState.station?.id, playbackState.isPlaying, transferPresentation, liveState.lastFailure) {
+                val activeTransfer = transfer ?: return@LaunchedEffect
+                when {
+                    !playbackState.isPlaying || playbackState.station?.id != activeTransfer.localStationId ->
+                        pendingLocalTransfer = null
+                    localTransferConfirmed(activeTransfer, playbackState, transferPresentation) -> {
+                        playback.stop()
+                        pendingLocalTransfer = null
+                    }
+                    liveState.lastFailure?.let {
+                        it.targetId == activeTransfer.targetId && it.stationId == activeTransfer.remoteStationId
+                    } == true || transferPresentation?.let {
+                        it.status in setOf(
+                            LivePlaybackStatusUi.Playing,
+                            LivePlaybackStatusUi.Buffering,
+                            LivePlaybackStatusUi.Paused,
+                            LivePlaybackStatusUi.Stopped,
+                            LivePlaybackStatusUi.Idle,
+                            LivePlaybackStatusUi.Error,
+                        ) && it.confirmedStationId != activeTransfer.remoteStationId
+                    } == true -> {
+                        phoneOutput = true
+                        pendingLocalTransfer = null
+                    }
+                }
+            }
+
             // An externally confirmed station on the selected target expands the open station
             // screen to what is actually playing (ТЗ §5.2, matrix §4.4 external override).
             androidx.compose.runtime.LaunchedEffect(selectedPresentation?.confirmedStationId, selectedPresentation?.status) {
@@ -160,11 +197,32 @@ class MainActivity : ComponentActivity() {
             val openStation: (String) -> Unit = { stationId -> stationPlayerStationId = stationId }
             val playLocal: (com.rockmobile.domain.model.Station, List<com.rockmobile.domain.model.Station>) -> Unit =
                 { station, queue -> personalData.recordPlay(station, "catalog"); playback.play(station, queue) }
+            val playRemote: (String, String?) -> Unit = { stationId, targetId ->
+                val selectedId = targetId ?: selectedTarget?.id
+                val localStationId = playbackState.station?.takeIf { playbackState.isPlaying }?.id
+                if (selectedId != null && localStationId != null) {
+                    pendingLocalTransfer = LocalPlaybackTransfer(localStationId, selectedId, stationId)
+                }
+                liveStore.requestPlay(stationId, targetId)
+            }
             val playSelectedOutput: (com.rockmobile.domain.model.Station, List<com.rockmobile.domain.model.Station>) -> Unit =
                 { station, queue ->
                     personalData.recordPlay(station, "catalog")
-                    if (phoneOutput) playback.play(station, queue) else liveStore.requestPlay(station.id)
+                    if (phoneOutput) playback.play(station, queue) else playRemote(station.id, null)
                 }
+            // Manual retry only: preserve the transfer contract if the user retries a failed target command.
+            var lastFailureKey by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+            androidx.compose.runtime.LaunchedEffect(liveState.lastFailure) {
+                val failure = liveState.lastFailure ?: return@LaunchedEffect
+                val key = failure.commandId ?: "rejected:${failure.message}:${failure.stationId}"
+                if (key == lastFailureKey) return@LaunchedEffect
+                lastFailureKey = key
+                val result = snackbarHostState.showSnackbar(failure.message, actionLabel = failure.stationId?.let { "Повторить" })
+                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed && failure.stationId != null) {
+                    phoneOutput = false
+                    playRemote(failure.stationId, failure.targetId)
+                }
+            }
             val playerStation = stationPlayerStationId?.let { id -> catalogue.singleOrNull { it.id == id } }
             val playerStationFavourite = stationPlayerStationId?.let { id -> personal.favourites.any { it.stationId == id } } ?: false
             if (stationPlayerStationId != null) StationPlayerScreen(
@@ -176,13 +234,17 @@ class MainActivity : ComponentActivity() {
                     catalogue.singleOrNull { it.id == stationPlayerStationId }?.let { personalData.toggleFavourite(it) }
                 },
                 phoneOutput = phoneOutput,
-                selectPhoneOutput = { phoneOutput = true },
-                selectTargetOutput = { targetId -> phoneOutput = false; targetDirectory.select(targetId) },
+                selectPhoneOutput = { phoneOutput = true; pendingLocalTransfer = null },
+                selectTargetOutput = { targetId ->
+                    phoneOutput = false
+                    targetDirectory.select(targetId)
+                    playerStation?.let { playRemote(it.id, targetId) }
+                },
                 directory = targetDirectoryState,
                 live = liveState,
                 localPlayback = playbackState,
                 commands = targetCommands,
-                playRemote = { stationId -> liveStore.requestPlay(stationId) },
+                playRemote = { stationId -> playRemote(stationId, null) },
                 stopRemote = { liveStore.requestStop() },
                 pauseRemote = { targetDirectory.dispatch(RemoteCommand.Pause) },
                 setMuteRemote = { muted -> targetDirectory.dispatch(RemoteCommand.SetMute(muted)) },
