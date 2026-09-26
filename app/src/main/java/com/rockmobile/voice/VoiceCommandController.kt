@@ -66,8 +66,11 @@ class VoiceCommandController(
         playback.beginVoiceCapture()
         _state.value = VoiceUiState.Recording
         job = scope.launch {
+            var captureActive = true
             try {
                 val audio = withContext(ioDispatcher) { recorder.record() }
+                playback.endVoiceCapture()
+                captureActive = false
                 processCapturedAudio(audio)
             } catch (cancelled: CancellationException) {
                 _state.value = VoiceUiState.Idle
@@ -79,7 +82,7 @@ class VoiceCommandController(
             } catch (error: Throwable) {
                 _state.value = VoiceUiState.RecoverableError(error.message ?: "Voice recording failed")
             } finally {
-                playback.endVoiceCapture()
+                if (captureActive) playback.endVoiceCapture()
             }
         }
     }

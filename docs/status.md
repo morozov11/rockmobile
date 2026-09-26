@@ -1,5 +1,14 @@
 # RockMobile status
 
+## Voice control recovery (2026-09-26)
+
+The phone restores local player volume as soon as microphone recording ends, before waiting for
+RockServer's voice response. A new remote station selection can supersede an earlier station
+command that is still in flight; repeated requests for the same station remain deduplicated.
+All 143 Android unit tests and debug assembly passed. The updated APK was installed on the
+connected phone; the user confirmed that station switching and phone audio work after a spoken
+command.
+
 ## Remote output, station name and track metadata (2026-09-26)
 
 The search field now shows clear and search icons instead of a microphone when it contains text.

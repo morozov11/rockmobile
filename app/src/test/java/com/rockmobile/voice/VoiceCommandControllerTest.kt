@@ -4,8 +4,10 @@ import com.rockmobile.domain.model.Station
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -87,6 +89,21 @@ class VoiceCommandControllerTest {
         })
         controller.start(); advanceUntilIdle()
         assertEquals(listOf<Byte>(1, 2), received.single().toList())
+    }
+
+    @Test fun recordingCompletion_restoresVolumeBeforeServerResponds() = runTest {
+        val response = CompletableDeferred<VoiceResolution>()
+        val captureEvents = mutableListOf<String>()
+        val controller = controller(this, client = client { response.await() }, captureEvents = captureEvents)
+
+        controller.start()
+        runCurrent()
+        assertEquals(VoiceUiState.Processing(), controller.state.value)
+        assertEquals(listOf("begin", "end"), captureEvents)
+
+        response.complete(VoiceResolution.NoMatch("test"))
+        advanceUntilIdle()
+        assertEquals(listOf("begin", "end"), captureEvents)
     }
 
     @Test fun cancelWhileRecording_releasesRecorder_andLeavesIdle() = runTest {

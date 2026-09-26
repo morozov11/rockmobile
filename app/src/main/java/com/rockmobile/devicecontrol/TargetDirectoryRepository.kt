@@ -92,9 +92,13 @@ internal class TargetDirectoryRepository(
         val selected = currentSelected() ?: run { publish("Выберите доступное устройство явно."); return null }
         if (!selected.usable || "media.control" !in scopes) { publish("Управление этим устройством сейчас недоступно."); return null }
         if (!commandAllowed(selected, body, now)) { publish("Действие не поддерживается выбранным устройством."); return null }
-        if (_commands.value.values.any { it.targetId == selected.id && it.actionKey == body.key && it.inFlight }) return null
+        if (_commands.value.values.any {
+                it.targetId == selected.id && it.actionKey == body.key && it.inFlight &&
+                    (body !is RemoteCommand.PlayStation || it.stationId == body.stationId)
+            }) return null
         val payload = newCommand(selected.id, body, now)
-        val lifecycle = CommandLifecycle(payload.commandId, selected.id, body.key, CommandPhase.Pending)
+        val lifecycle = CommandLifecycle(payload.commandId, selected.id, body.key, CommandPhase.Pending,
+            stationId = (body as? RemoteCommand.PlayStation)?.stationId)
         _commands.value += payload.commandId to lifecycle
         if (socket?.send(payload) != true) {
             _commands.value += payload.commandId to lifecycle.copy(phase = CommandPhase.Failed, detail = "Соединение с сервером потеряно.")

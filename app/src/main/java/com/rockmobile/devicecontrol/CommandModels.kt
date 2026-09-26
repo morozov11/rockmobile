@@ -49,6 +49,7 @@ data class CommandLifecycle(
     val actionKey: String,
     val phase: CommandPhase,
     val detail: String? = null,
+    val stationId: String? = null,
 ) { val inFlight: Boolean get() = phase == CommandPhase.Pending || phase == CommandPhase.Received || phase == CommandPhase.Accepted || phase == CommandPhase.AwaitingState }
 
 data class EphemeralReceiver(val receiverId: String, val displayName: String, val expiresAt: Instant) {

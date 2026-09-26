@@ -166,6 +166,19 @@ class TargetDirectoryRepositoryTest {
         assertFalse(repository.commands.value[id]!!.phase == CommandPhase.Succeeded)
     }
 
+    @Test fun newStationCanSupersedePendingStationCommand() = runTest {
+        val socket = FakeSockets()
+        val snapshot = directory(1, rockCast(known = listOf("media.playback", "media.station")),
+            scopes = listOf("device.directory.read", "media.control"))
+        val repository = repository(socket, MemorySelections(), snapshot)
+        repository.start(this, session()); runCurrent(); repository.select("rockcast")
+
+        assertTrue(repository.dispatch(RemoteCommand.PlayStation("station-a")) != null)
+        assertEquals(null, repository.dispatch(RemoteCommand.PlayStation("station-a")))
+        assertTrue(repository.dispatch(RemoteCommand.PlayStation("station-b")) != null)
+        assertEquals(2, socket.sent.size)
+    }
+
     @Test fun terminalSuccess_waitsForRefreshedDirectory_andRemovalCancels() = runTest {
         val socket = FakeSockets()
         val first = directory(1, rockCast(known = listOf("media.playback")), scopes = listOf("device.directory.read", "media.control"))
