@@ -116,6 +116,17 @@ class MainActivity : ComponentActivity() {
             val selectedPresentation = liveState.presentTarget(selectedTarget?.id)
             val miniRemote = liveState.presentTarget(null)
 
+            val remoteStationId = miniRemote?.confirmedStationId
+            var resolvedRemoteStation by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.rockmobile.domain.model.Station?>(null) }
+            androidx.compose.runtime.LaunchedEffect(remoteStationId, catalogue) {
+                resolvedRemoteStation = null
+                val id = remoteStationId ?: return@LaunchedEffect
+                if (catalogue.any { it.id == id }) return@LaunchedEffect
+                resolvedRemoteStation = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { repository.resolveStation(id) }
+            }
+            val displayCatalogue = resolvedRemoteStation?.takeIf { resolved -> catalogue.none { it.id == resolved.id } }
+                ?.let { catalogue + it } ?: catalogue
+
             androidx.compose.runtime.LaunchedEffect(liveState.overrideNotice) {
                 val notice = liveState.overrideNotice ?: return@LaunchedEffect
                 val targetName = availableDirectory?.targets?.singleOrNull { it.id == notice.targetId }?.name
@@ -123,8 +134,11 @@ class MainActivity : ComponentActivity() {
                 liveStore.consumeOverrideNotice()
             }
 
-            var phoneOutput by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(true) }
+            var phoneOutputOverride by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<Boolean?>(null) }
+            val phoneOutput = phoneOutputOverride ?: (selectedTarget == null)
             var pendingLocalTransfer by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<LocalPlaybackTransfer?>(null) }
+            val currentPhoneOutput by androidx.compose.runtime.rememberUpdatedState(phoneOutput)
+            val currentSelectedTarget by androidx.compose.runtime.rememberUpdatedState(selectedTarget)
             val voice = androidx.compose.runtime.remember(account) {
                 VoiceCommandController(
                     AndroidVoiceRecorder(this), RockserverVoiceClient(), settings::rockserverUrl,
@@ -134,10 +148,18 @@ class MainActivity : ComponentActivity() {
                         override fun endVoiceCapture() = playback.endVoiceCapture()
                         override fun showCandidates(stations: List<com.rockmobile.domain.model.Station>) = model.showVoiceCandidates(stations)
                         override fun play(station: com.rockmobile.domain.model.Station, queue: List<com.rockmobile.domain.model.Station>) {
-                            phoneOutput = true
-                            pendingLocalTransfer = null
                             personalData.recordPlay(station, "remote")
-                            playback.play(station, queue, fromVoiceResult = true)
+                            val targetId = currentSelectedTarget?.id
+                            if (currentPhoneOutput || targetId == null) {
+                                pendingLocalTransfer = null
+                                playback.play(station, queue, fromVoiceResult = true)
+                            } else {
+                                val local = playback.state.value
+                                if (local.isPlaying && local.station != null) {
+                                    pendingLocalTransfer = LocalPlaybackTransfer(local.station.id, targetId, station.id)
+                                }
+                                liveStore.requestPlay(station.id, targetId)
+                            }
                         }
                     },
                     lifecycleScope,
@@ -176,7 +198,6 @@ class MainActivity : ComponentActivity() {
                             LivePlaybackStatusUi.Error,
                         ) && it.confirmedStationId != activeTransfer.remoteStationId
                     } == true -> {
-                        phoneOutput = true
                         pendingLocalTransfer = null
                     }
                 }
@@ -219,24 +240,24 @@ class MainActivity : ComponentActivity() {
                 lastFailureKey = key
                 val result = snackbarHostState.showSnackbar(failure.message, actionLabel = failure.stationId?.let { "Повторить" })
                 if (result == androidx.compose.material3.SnackbarResult.ActionPerformed && failure.stationId != null) {
-                    phoneOutput = false
+                    phoneOutputOverride = false
                     playRemote(failure.stationId, failure.targetId)
                 }
             }
-            val playerStation = stationPlayerStationId?.let { id -> catalogue.singleOrNull { it.id == id } }
+            val playerStation = stationPlayerStationId?.let { id -> displayCatalogue.singleOrNull { it.id == id } }
             val playerStationFavourite = stationPlayerStationId?.let { id -> personal.favourites.any { it.stationId == id } } ?: false
             if (stationPlayerStationId != null) StationPlayerScreen(
                 stationId = stationPlayerStationId!!,
-                stations = catalogue,
+                stations = displayCatalogue,
                 favourite = playerStationFavourite,
                 back = { stationPlayerStationId = null },
                 toggleFavourite = {
-                    catalogue.singleOrNull { it.id == stationPlayerStationId }?.let { personalData.toggleFavourite(it) }
+                    displayCatalogue.singleOrNull { it.id == stationPlayerStationId }?.let { personalData.toggleFavourite(it) }
                 },
                 phoneOutput = phoneOutput,
-                selectPhoneOutput = { phoneOutput = true; pendingLocalTransfer = null },
+                selectPhoneOutput = { phoneOutputOverride = true; pendingLocalTransfer = null },
                 selectTargetOutput = { targetId ->
-                    phoneOutput = false
+                    phoneOutputOverride = false
                     targetDirectory.select(targetId)
                     playerStation?.let { playRemote(it.id, targetId) }
                 },
@@ -264,7 +285,7 @@ class MainActivity : ComponentActivity() {
                 receivers = targetDirectory.receivers.collectAsStateWithLifecycle().value,
                 back = { devicesScreen = false },
                 refresh = targetDirectory::refresh,
-                select = targetDirectory::select,
+                select = { targetId -> phoneOutputOverride = false; targetDirectory.select(targetId) },
                 dispatch = targetDirectory::dispatch,
                 openAccount = { account.ensureSessionVisible(); accountOpen = true },
             )
@@ -274,6 +295,7 @@ class MainActivity : ComponentActivity() {
                 voice = voiceState,
                 retry = model::retryRockserver,
                 updateFilters = model::updateFilters,
+                onSearch = model::submitSearch,
                 play = playSelectedOutput,
                 toggle = playback::toggle,
                 localStop = playback::stop,
@@ -292,6 +314,7 @@ class MainActivity : ComponentActivity() {
                 accountConnected = accountConnected,
                 clearHistory = personalData::clearHistory,
                 liveRemote = miniRemote,
+                resolvedRemoteStation = resolvedRemoteStation,
                 liveRemoteTargetName = miniRemote?.let { remote -> availableDirectory?.targets?.singleOrNull { it.id == remote.targetId }?.name },
                 remotePlay = { stationId ->
                     val playingTarget = miniRemote?.targetId

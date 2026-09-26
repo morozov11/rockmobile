@@ -22,6 +22,8 @@ internal fun parseRockserverCatalogPage(body: String): RockserverCatalogPage {
     return RockserverCatalogPage(parseRockserverStations(body), nextCursor)
 }
 
+internal fun parseRockserverStation(body: String): Station = parseStation(JSONObject(body))
+
 private fun parseStation(json: JSONObject): Station {
     fun required(name: String): String = json.optString(name).trim().also {
         require(it.isNotEmpty()) { "Station is missing $name" }

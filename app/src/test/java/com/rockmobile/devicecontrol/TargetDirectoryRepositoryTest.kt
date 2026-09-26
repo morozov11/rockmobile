@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -34,6 +35,16 @@ class TargetDirectoryRepositoryTest {
         assertTrue(KnownCapability.Playback in target.knownCapabilities)
         assertEquals(1, target.knownCapabilities.size)
         assertEquals(DirectoryWireMessage.IgnoredUnknown, decodeDirectoryMessage(DirectoryJson.codec.encodeToString(UnknownMessageDto(1, "message", "future.event", "2026-09-02T12:00:00Z", IgnoredPayloadDto()))))
+    }
+
+    @Test fun runtimeState_mapsTrackMetadataForRemotePresentation() {
+        val device = rockCast().copy(runtimeState = RuntimeStateDto(
+            4, "2026-09-26T12:00:00Z", null,
+            DeviceRuntimeStateDto(PlaybackRuntimeStateDto("playing", "station-a", "Artist - Track")),
+        ))
+        val encoded = DirectoryJson.codec.encodeToString(directory(1, device))
+        val decoded = DirectoryJson.codec.decodeFromString<DirectoryDto>(encoded)
+        assertEquals("Artist - Track", (decoded.devices.single().toTarget().runtimeState as TargetRuntimeState.Known).trackTitle)
     }
 
     @Test fun explicitSelection_restoresOnlyUsableTargetAndRemovalNeverSubstitutes() = runTest {
@@ -69,6 +80,20 @@ class TargetDirectoryRepositoryTest {
         assertFalse(state.targets.single { it.id == "offline" }.usable)
         assertEquals(TargetFreshness.Stale, state.targets.single { it.id == "stale" }.freshness)
         assertEquals(TargetFreshness.Unknown, state.targets.single { it.id == "unknown" }.freshness)
+    }
+
+    @Test fun selectedTarget_survivesTemporaryOfflineStateWithoutAllowingCommands() = runTest {
+        val socket = FakeSockets()
+        val selections = MemorySelections()
+        val repository = repository(socket, selections, directory(1, rockCast()))
+        repository.start(this, session()); runCurrent(); repository.select("rockcast")
+        socket.listener!!.onMessage(DirectoryWireMessage.Upsert(2, player("rockcast", presence = "offline", freshness = "stale")))
+        runCurrent()
+        val state = repository.state.value as TargetDirectoryState.Available
+        assertEquals("rockcast", state.selectedTargetId)
+        assertFalse(state.mayControlMedia)
+        assertEquals("rockcast", selections.value)
+        assertEquals(null, repository.dispatch(RemoteCommand.Play))
     }
 
     @Test fun revisionGap_reloadsSnapshotAndSocketLossReconnectsOnce() = runTest {

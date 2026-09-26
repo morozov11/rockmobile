@@ -1,5 +1,15 @@
 # RockMobile task log
 
+## Remote output, station name and track metadata (2026-09-26)
+
+- Follow-up: a non-empty search field replaces its trailing microphone with clear and search icons. Clear restores the catalogue and microphone; search submits the typed query without recording audio. Typing keeps the current list visible, while the button closes the keyboard and shows progress or a failure reason. Tests cover explicit submission and preservation of server-ranked results.
+- Live check: on the connected phone, `reggae` kept the 41-station starter list until search was tapped, then displayed 20 RockServer stations with the keyboard closed.
+
+- Goal: keep RockCast selected during remote control and show the station and current track on the phone.
+- Scope: exact server station lookup with extended SQLite fallback; optional runtime `track_title` presentation; preserve selected target through temporary offline/stale state; route voice station results and catalogue taps to the current output.
+- Checks: `:app:testDebugUnitTest :app:assembleDebug` passed; installed on the connected phone. Two live catalogue switches reached RockCast and showed distinct track titles. Spoken microphone command remains unverified after the fix.
+- Status: implemented and installed on the phone.
+
 ## RM-4 — Station-First state-driven live playback UI (implemented locally, 2026-09-17)
 
 - Goal: render confirmed station/playback/volume from the directory `runtime_state`

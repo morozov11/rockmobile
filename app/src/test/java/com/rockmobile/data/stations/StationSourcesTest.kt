@@ -71,6 +71,20 @@ class StationSourcesTest {
         assertEquals("station-rock-001", source.search("rock")?.single()?.id)
     }
 
+    @Test fun remote_station_resolvesExactIdFromServer() = runTest {
+        var requestedUrl = ""
+        val transport = object : HttpTransport {
+            override fun get(url: String, bearerToken: String): HttpResponse {
+                requestedUrl = url
+                return HttpResponse(200, """{"id":"rb-123","name":"Remote Radio","stream_url":"https://example.test/live"}""")
+            }
+            override fun post(url: String, bearerToken: String, jsonBody: String) = error("unused")
+        }
+        val source = RockserverStationSource(RockserverApi(transport), { "https://server.test" }, { "token" })
+        assertEquals("Remote Radio", source.station("rb-123")?.name)
+        assertEquals("https://server.test/api/v1/catalog/stations/rb-123", requestedUrl)
+    }
+
     @Test fun remote_catalogue_followsServerCursorUntilTheLastPage() = runTest {
         val transport = PagingTransport()
         val source = RockserverStationSource(RockserverApi(transport), { "https://server.test" }, { "token" })

@@ -35,6 +35,8 @@ class ExtendedCatalogStationSource(private val context: Context) : LocalStationS
 
     override suspend fun load(): List<Station> = database.catalogue().initialStations(INITIAL_PAGE_SIZE).map(ExtendedStation::toStation)
 
+    override suspend fun station(id: String): Station? = database.catalogue().station(id)?.toStation()
+
     override suspend fun search(query: String, genre: String?, country: String?, language: String?): List<Station> {
         val terms = searchTerms(query, genre)
         val rows = if (terms.isEmpty() && country.isNullOrBlank() && language.isNullOrBlank()) database.catalogue().initialStations(INITIAL_PAGE_SIZE)

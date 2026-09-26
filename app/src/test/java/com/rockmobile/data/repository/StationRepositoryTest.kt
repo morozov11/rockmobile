@@ -35,6 +35,15 @@ class StationRepositoryTest {
         assertEquals(StationSearchResult.Unavailable, result)
     }
 
+    @Test fun resolveStation_readsServerAndFallsBackToExtendedCatalogue() = runTest {
+        val remote = object : RemoteStationSource {
+            override suspend fun search(query: String) = emptyList<Station>()
+            override suspend fun station(id: String): Station = throw IOException("offline")
+        }
+        val fallback = local(listOf(station))
+        assertEquals(station, StationRepository(remote, local(emptyList()), fallback).resolveStation(station.id))
+    }
+
     @Test fun search_sendsSelectedFiltersAsNaturalLanguageToRockserver() = runTest {
         var requestedQuery: String? = null
         val remote = object : RemoteStationSource {

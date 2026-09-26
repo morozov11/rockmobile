@@ -54,13 +54,13 @@ class StationsViewModelTest {
         assertTrue(filterStations(listOf(station), StationFilters(country = "USA")).isEmpty())
         assertEquals(listOf(station), filterStations(listOf(station), StationFilters()))
     }
-    @Test fun updateFilters_recalculatesContentWithoutReloadingCatalogue() = runTest(dispatcher) {
+    @Test fun typingQuery_keepsCatalogueVisibleUntilSearchIsSubmitted() = runTest(dispatcher) {
         val model = StationsViewModel(repository(local = { listOf(station) }), dispatcher)
         runCurrent()
         model.updateFilters { it.copy(query = "missing") }
-        assertTrue((model.state.value as StationsUiState.Content).stations.isEmpty())
+        assertEquals(listOf(station), (model.state.value as StationsUiState.Content).stations)
     }
-    @Test fun textSearch_usesRemoteOnlyForNonBlankQuery() = runTest(dispatcher) {
+    @Test fun textSearch_waitsForSubmitAndUsesRemoteForNonBlankQuery() = runTest(dispatcher) {
         val jazz = Station("jazz", "Quiet Jazz", "https://example.test/jazz", tags = listOf("jazz"))
         var requestedQuery: String? = null
         val model = StationsViewModel(
@@ -73,8 +73,36 @@ class StationsViewModelTest {
         runCurrent()
         model.updateFilters { it.copy(query = "jazz") }
         advanceTimeBy(250); runCurrent()
+        assertEquals(null, requestedQuery)
+        model.submitSearch(); runCurrent()
         assertEquals("jazz", requestedQuery)
         assertEquals(listOf(jazz), (model.state.value as StationsUiState.Content).stations)
+    }
+
+    @Test fun submitSearch_runsTypedQueryImmediatelyWithoutStartingVoice() = runTest(dispatcher) {
+        var calls = 0
+        val model = StationsViewModel(repository(local = { listOf(station) }, remoteSearch = {
+            calls++
+            listOf(station)
+        }), dispatcher)
+        runCurrent()
+        model.updateFilters { it.copy(query = "Rock") }
+        model.submitSearch()
+        assertTrue((model.state.value as StationsUiState.Content).searching)
+        runCurrent()
+        assertEquals(1, calls)
+        assertTrue(!(model.state.value as StationsUiState.Content).searching)
+        advanceTimeBy(250); runCurrent()
+        assertEquals(1, calls)
+    }
+
+    @Test fun serverSearch_keepsRankedResultsWithoutLocalTextRefiltering() = runTest(dispatcher) {
+        val semanticMatch = Station("other", "Island Radio", "https://example.test/island")
+        val model = StationsViewModel(repository(local = { listOf(station) }, remoteSearch = { listOf(semanticMatch) }), dispatcher)
+        runCurrent()
+        model.updateFilters { it.copy(query = "reggae") }
+        model.submitSearch(); runCurrent()
+        assertEquals(listOf(semanticMatch), (model.state.value as StationsUiState.Content).stations)
     }
 
     @Test fun selectingGenre_withNoText_usesRemoteSearchAndKeepsCompleteOptions() = runTest(dispatcher) {

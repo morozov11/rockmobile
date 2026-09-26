@@ -49,6 +49,14 @@ class LivePlaybackReducerTest {
     private fun stateWith(intent: PendingPlaybackIntent, confirmed: ConfirmedDeviceState? = null): LivePlaybackState =
         LivePlaybackState(targets = mapOf(intent.targetId to LiveTargetState(confirmed = confirmed, pending = intent)))
 
+    @Test fun `confirmed track metadata is shown with the remote station`() {
+        val state = LivePlaybackState(targets = mapOf(target to LiveTargetState(
+            confirmed = confirmed(revision = 4, status = PlaybackStatus.Playing, stationId = "station-a")
+                .copy(trackTitle = "Artist - Track"),
+        )))
+        assertEquals("Artist - Track", state.presentTarget(target)?.trackTitle)
+    }
+
     // --- Matrix row: pendingIntent(A) + stateUpdate(A, buffering) -> Buffering(A) ---
 
     @Test

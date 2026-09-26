@@ -6,8 +6,8 @@
 | --- | --- |
 | [architecture.md](architecture.md) | Границы слоёв, владение состоянием и потоки данных |
 | [modules.md](modules.md) | Карта файлов и ключевые типы |
-| [playback.md](playback.md) | Media3, MediaSession, фон и ошибки потока |
-| [voice.md](voice.md) | Запись, VAD, WebSocket Rockserver и безопасный результат |
+| [playback.md](playback.md) | Media3, MediaSession, удалённый RockCast, метаданные и ошибки потока |
+| [voice.md](voice.md) | Запись, VAD, WebSocket Rockserver и маршрут результата на выбранное устройство |
 | [RM-001.md](RM-001.md) | Фактический результат RM-001 — RM-003 |
 
 ## Инварианты
@@ -17,4 +17,3 @@
 - Compose не владеет ExoPlayer и не выполняет сеть/запись на main thread.
 - Аудиоданные и bearer-токены не логируются.
 - Voice API недоверен до строгой валидации.
-

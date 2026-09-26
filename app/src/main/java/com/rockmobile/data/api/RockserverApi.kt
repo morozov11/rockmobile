@@ -92,6 +92,12 @@ class RockserverApi(
         return response.body
     }
 
+    fun catalogStation(baseUrl: String, bearerToken: String, stationId: String): String {
+        val response = transport.get(endpoint(baseUrl, "$API_V1_PREFIX/catalog/stations/$stationId"), bearerToken)
+        if (response.code !in 200..299) throw ApiError.from(response)
+        return response.body
+    }
+
     fun post(baseUrl: String, route: String, bearerToken: String = "", body: JSONObject = JSONObject()): HttpResponse =
         transport.post(endpoint(baseUrl, route), bearerToken, body.toString())
 

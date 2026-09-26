@@ -187,7 +187,7 @@ internal class TargetDirectoryRepository(
     private fun publish(notice: String? = null) {
         val active = session ?: return
         val saved = selections.load(active.userId, active.deviceId)
-        val selected = saved?.takeIf { targets[it]?.usable == true }
+        val selected = saved?.takeIf { it in targets }
         if (saved != null && selected == null) selections.clear(active.userId, active.deviceId)
         val invalidation = if (saved != null && selected == null) "Выбранное устройство больше недоступно. Выберите другое явно." else notice
         _state.value = TargetDirectoryState.Available(targets.values.sortedBy { it.name }, selected, scopes, invalidation)

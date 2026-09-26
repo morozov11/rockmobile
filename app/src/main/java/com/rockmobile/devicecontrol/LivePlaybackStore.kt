@@ -154,6 +154,7 @@ class LivePlaybackStore internal constructor(
                                 observedAt = runtime.observedAt,
                                 status = runtime.playbackStatus,
                                 stationId = runtime.stationId,
+                                trackTitle = runtime.trackTitle,
                                 volumeLevel = runtime.volumeLevel,
                                 muted = runtime.muted,
                             ),

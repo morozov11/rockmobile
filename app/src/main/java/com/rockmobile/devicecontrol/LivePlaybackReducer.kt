@@ -19,6 +19,7 @@ data class ConfirmedDeviceState(
     val stationId: String?,
     val volumeLevel: Int?,
     val muted: Boolean?,
+    val trackTitle: String? = null,
 )
 
 /** What a locally dispatched command is still waiting to see confirmed by device state. */
@@ -212,6 +213,7 @@ data class LiveTargetPresentation(
     val volumeApplying: Boolean,
     val volumeDragging: Boolean,
     val failure: LiveCommandFailure?,
+    val trackTitle: String? = null,
 )
 
 /**
@@ -257,6 +259,7 @@ fun LivePlaybackState.presentTarget(targetId: String?): LiveTargetPresentation? 
         volumeApplying = pendingVolumeHere != null && drag == null,
         volumeDragging = drag != null,
         failure = lastFailure?.takeIf { it.targetId == id || it.targetId == null },
+        trackTitle = confirmed?.trackTitle,
     )
 }
 

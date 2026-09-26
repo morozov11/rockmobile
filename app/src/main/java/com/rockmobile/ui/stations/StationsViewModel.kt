@@ -51,8 +51,10 @@ sealed interface StationsUiState {
         val fallbackReason: String? = null,
         val filters: StationFilters = StationFilters(),
         val filterOptions: StationFilterOptions? = null,
+        val searching: Boolean = false,
     ) : StationsUiState {
-        val stations get() = filterStations(catalogue.stations, filters)
+        val stations get() = if (filters.query.isNotBlank() || catalogue.source == com.rockmobile.domain.model.CatalogueSource.ROCKSERVER)
+            catalogue.stations else filterStations(catalogue.stations, filters)
     }
     data class Error(val message: String) : StationsUiState
 }
@@ -85,7 +87,7 @@ class StationsViewModel(
         val content = _state.value as? StationsUiState.Content ?: return
         val filters = transform(content.filters)
         if (filters == content.filters) return
-        _state.value = content.copy(filters = filters)
+        _state.value = content.copy(filters = filters, searching = false)
         searchJob?.cancel()
         val hasSearchRequest = filters.query.trim().isNotEmpty() || filters.genre != null || filters.country != null || filters.language != null
         if (!hasSearchRequest) {
@@ -95,15 +97,31 @@ class StationsViewModel(
             return
         }
 
+        if (filters.query != content.filters.query) return
+
+        search(filters, 250)
+    }
+
+    fun submitSearch() {
+        val filters = (_state.value as? StationsUiState.Content)?.filters ?: return
+        if (filters.query.isBlank()) return
+        searchJob?.cancel()
+        search(filters, 0)
+    }
+
+    private fun search(filters: StationFilters, debounceMs: Long) {
+        val content = _state.value as? StationsUiState.Content ?: return
+        _state.value = content.copy(searching = true, fallbackReason = null)
         searchJob = viewModelScope.launch {
-            delay(250)
+            if (debounceMs > 0) delay(debounceMs)
             val result = withContext(ioDispatcher) {
                 repository.search(filters.query, filters.genre, filters.country, filters.language)
             }
             val current = _state.value as? StationsUiState.Content ?: return@launch
             if (current.filters != filters) return@launch
-            if (result is StationSearchResult.Success) {
-                _state.value = current.copy(catalogue = result.catalogue, fallbackReason = null)
+            _state.value = when (result) {
+                is StationSearchResult.Success -> current.copy(catalogue = result.catalogue, searching = false)
+                StationSearchResult.Unavailable -> current.copy(searching = false, fallbackReason = "Search unavailable; showing previous stations")
             }
         }
     }

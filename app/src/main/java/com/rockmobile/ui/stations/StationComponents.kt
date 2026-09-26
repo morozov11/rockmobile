@@ -70,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -216,10 +217,12 @@ internal fun SearchAndFilters(
     content: StationsUiState.Content,
     voice: VoiceUiState,
     update: ((StationFilters) -> StationFilters) -> Unit,
+    search: () -> Unit,
     startVoice: () -> Unit,
     finishVoice: () -> Unit,
     cancelVoice: () -> Unit,
 ) {
+    val keyboard = LocalSoftwareKeyboardController.current
     val pulseTransition = rememberInfiniteTransition(label = "voice microphone pulse")
     val pulseAlpha by pulseTransition.animateFloat(initialValue = .45f, targetValue = .95f, animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "voice microphone pulse alpha")
     OutlinedTextField(
@@ -231,7 +234,19 @@ internal fun SearchAndFilters(
             when (voice) {
                 VoiceUiState.Recording -> IconButton(onClick = finishVoice, modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.error.copy(alpha = pulseAlpha))) { Icon(Icons.Default.Stop, "Finish voice recording and search now", tint = MaterialTheme.colorScheme.onError) }
                 is VoiceUiState.Processing -> IconButton(onClick = cancelVoice) { Icon(Icons.Default.Close, "Cancel voice command") }
-                else -> IconButton(onClick = startVoice) { Icon(Icons.Default.Mic, "Start voice search", tint = MaterialTheme.colorScheme.primary) }
+                else -> if (content.filters.query.isNotBlank()) {
+                    Row {
+                        IconButton(onClick = { update { it.copy(query = "") } }) {
+                            Icon(Icons.Default.Close, "Clear search text", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = { keyboard?.hide(); search() }, enabled = !content.searching) {
+                            if (content.searching) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Default.Search, "Search typed text", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                } else {
+                    IconButton(onClick = startVoice) { Icon(Icons.Default.Mic, "Start voice search", tint = MaterialTheme.colorScheme.primary) }
+                }
             }
         },
         singleLine = true,
@@ -363,6 +378,9 @@ internal fun LiveMiniPlayer(
                 StationLogoOrPlaceholder(remoteTitle, remoteStation, Modifier.size(40.dp))
                 Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
                     Text(remoteTitle ?: "Станция", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                    remote.trackTitle?.let { title ->
+                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+                    }
                     val percent = remote.volumePercent
                     Text(
                         listOfNotNull(remoteTargetName, percent?.let { "$it%" }).joinToString(" · "),

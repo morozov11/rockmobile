@@ -174,6 +174,9 @@ fun StationPlayerScreen(
                         } else {
                             val blockingReason = if (deviceSupport.supported) null else deviceSupport.reason
                             RemoteOnAirIndicator(presentation)
+                            presentation?.trackTitle?.let { title ->
+                                Text(title, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 8.dp))
+                            }
                             if (blockingReason != null) {
                                 Text(
                                     blockingReason,

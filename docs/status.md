@@ -1,5 +1,23 @@
 # RockMobile status
 
+## Remote output, station name and track metadata (2026-09-26)
+
+The search field now shows clear and search icons instead of a microphone when it contains text.
+Search submits the typed query immediately without voice capture, while clear restores the catalogue
+and the microphone icon. Typing alone keeps the current list visible; the search button shows a
+progress indicator and closes the keyboard, and an unavailable search shows a reason.
+On the connected phone, typing `reggae` kept the 41-station starter list; tapping search closed the
+keyboard and displayed 20 RockServer results.
+
+The selected RockCast target now remains selected through temporary offline/stale states.
+Choosing it in Devices also selects remote output; catalogue taps and voice station results use
+the same current output. Voice no longer forces phone playback. A remote station missing from the
+41-station starter list is resolved by exact RockServer catalog ID, then verified extended SQLite.
+The remote mini-player and station screen show optional `track_title` from RockCast runtime state.
+Android unit tests and debug assembly passed; the APK was installed on the connected phone.
+Two successive catalog taps changed the live desktop station, and the phone displayed the station
+name and changing track title. A post-fix spoken microphone command has not been verified.
+
 ## RM-12 — rockplatform.win domain and server-owned station icons (implemented locally, 2026-09-24)
 
 RockServer production moved to `https://rockplatform.win`: the settings

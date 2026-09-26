@@ -4,6 +4,7 @@ import android.content.res.AssetManager
 import com.rockmobile.data.api.RockserverApi
 import com.rockmobile.data.dto.parseRockserverCatalogPage
 import com.rockmobile.data.dto.parseRockserverStations
+import com.rockmobile.data.dto.parseRockserverStation
 import com.rockmobile.domain.model.Station
 import com.rockmobile.domain.model.StationStream
 import com.rockmobile.domain.model.CatalogueSource
@@ -17,11 +18,13 @@ import kotlinx.coroutines.CancellationException
 interface RemoteStationSource {
     suspend fun search(query: String): List<Station>?
     suspend fun loadCatalogue(): List<Station>? = null
+    suspend fun station(id: String): Station? = null
 }
 interface LocalStationSource {
     val catalogueSource: CatalogueSource get() = CatalogueSource.BUNDLED
     suspend fun load(): List<Station>
     suspend fun search(query: String, genre: String?, country: String?, language: String?): List<Station>? = null
+    suspend fun station(id: String): Station? = load().singleOrNull { it.id == id }
 }
 
 class RockserverStationSource(
@@ -29,6 +32,8 @@ class RockserverStationSource(
     private val baseUrl: () -> String,
     private val bearerToken: () -> String,
 ) : RemoteStationSource {
+    override suspend fun station(id: String): Station =
+        parseRockserverStation(api.catalogStation(baseUrl(), bearerToken(), id))
     override suspend fun search(query: String): List<Station> =
         parseRockserverStations(api.search(baseUrl(), bearerToken(), query))
 

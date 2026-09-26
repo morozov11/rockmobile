@@ -41,6 +41,7 @@ fun StationsScreen(
     voice: VoiceUiState,
     retry: () -> Unit,
     updateFilters: ((StationFilters) -> StationFilters) -> Unit,
+    onSearch: () -> Unit,
     play: (Station, List<Station>) -> Unit,
     toggle: () -> Unit,
     localStop: () -> Unit,
@@ -56,6 +57,7 @@ fun StationsScreen(
     accountConnected: Boolean = false,
     clearHistory: () -> Unit,
     liveRemote: LiveTargetPresentation? = null,
+    resolvedRemoteStation: Station? = null,
     liveRemoteTargetName: String? = null,
     remotePlay: (String) -> Unit = {},
     remoteStop: () -> Unit = {},
@@ -90,13 +92,14 @@ fun StationsScreen(
                             onOpenFavourites = { favouritesOpen = true },
                             onOpenHistory = { historyOpen = true },
                         )
-                        SearchAndFilters(state, voice, updateFilters, onVoice, onFinishVoice, onCancelVoice)
+                        SearchAndFilters(state, voice, updateFilters, onSearch, onVoice, onFinishVoice, onCancelVoice)
                         VoiceStatusBar(voice, onCancelVoice, onDismissVoice)
                         LiveMiniPlayer(
                             remote = liveRemote,
                             remoteTargetName = liveRemoteTargetName,
                             local = playback,
-                            stations = state.catalogue.stations,
+                            stations = resolvedRemoteStation?.takeIf { resolved -> state.catalogue.stations.none { it.id == resolved.id } }
+                                ?.let { state.catalogue.stations + it } ?: state.catalogue.stations,
                             openStation = openStation,
                             remotePlay = remotePlay,
                             remoteStop = remoteStop,

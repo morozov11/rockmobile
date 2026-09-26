@@ -34,6 +34,7 @@ sealed interface TargetRuntimeState {
         val stationId: String?,
         val volumeLevel: Int?,
         val muted: Boolean?,
+        val trackTitle: String? = null,
     ) : TargetRuntimeState
 }
 
@@ -98,6 +99,7 @@ private fun RuntimeStateDto?.toRuntimeState(): TargetRuntimeState {
         receivedAt = dto.receivedAt,
         playbackStatus = playback?.status?.let(::playbackStatus),
         stationId = playback?.stationId,
+        trackTitle = playback?.trackTitle?.trim()?.takeIf { it.isNotEmpty() && it.length <= 256 },
         volumeLevel = volume?.level?.takeIf { it in 0..100 },
         muted = volume?.muted,
     )

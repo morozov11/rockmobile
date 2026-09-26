@@ -48,6 +48,7 @@ internal data class DirectoryEntryDto(
 @Serializable internal data class PlaybackRuntimeStateDto(
     val status: String,
     @SerialName("station_id") val stationId: String? = null,
+    @SerialName("track_title") val trackTitle: String? = null,
 )
 @Serializable internal data class VolumeRuntimeStateDto(val level: Int, val muted: Boolean)
 

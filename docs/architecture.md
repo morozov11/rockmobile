@@ -58,10 +58,16 @@ safe unknown messages do not cross the boundary; malformed known messages are re
 The repository applies monotonic snapshots/upserts/removals and reloads after a revision gap,
 directory resync request or connection loss. It never exposes a command path.
 
-Only an explicitly tapped target ID is saved, scoped by account and controller device. A missing,
-revoked, offline, stale or unknown selected target is cleared rather than replaced from a display
-name; the UI shows a requires-selection state. Ordinary account inventory, pairing, radio and
-offline catalogue remain independent.
+Only an explicitly tapped target ID is saved, scoped by account and controller device. A removed
+or revoked target is cleared; a temporarily offline or stale target remains selected while commands
+are gated until it becomes usable again. The selected output is shared by catalogue taps and voice
+results, and choosing a target in the Devices screen sets remote output explicitly. Ordinary
+account inventory, pairing, radio and offline catalogue remain independent.
+
+The directory's confirmed `station_id` is resolved through RockServer's exact station lookup,
+then the verified extended SQLite fallback. Its optional `track_title` is displayed alongside the
+station name in both remote player surfaces; neither command acceptance nor a local catalogue hit
+is used as proof of remote playback.
 
 ## Воспроизведение
 

@@ -15,6 +15,16 @@ class StationRepository(
     private val primary: LocalStationSource,
     private val offlineSearch: LocalStationSource = primary,
 ) {
+    suspend fun resolveStation(id: String): Station? {
+        if (!id.matches(Regex("^[a-z0-9]+(?:-[a-z0-9]+)*$")) || id.length > 128) return null
+        return try {
+            remote.station(id) ?: offlineSearch.station(id)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            runCatching { offlineSearch.station(id) }.getOrNull()
+        }
+    }
     suspend fun loadCatalogue(): CatalogueLoadResult = try {
         val primaryStations = primary.load()
         if (primaryStations.isEmpty()) throw EmptyCatalogueException("Local catalogue is empty")
