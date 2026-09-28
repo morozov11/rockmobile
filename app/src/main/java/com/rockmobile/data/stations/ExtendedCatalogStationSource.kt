@@ -33,9 +33,109 @@ class ExtendedCatalogStationSource(private val context: Context) : LocalStationS
             .also(::verifyDatabase)
     }
 
+    /**
+     * Room-free point lookups by station id. Room's pre-packaged identity check rejects this
+     * asset's schema, so catalog fallback and this lookup must not depend on the Room handle;
+     * a read-only SQLite connection over the verified copy serves both names and streams.
+     */
+    suspend fun stationsById(ids: Collection<String>): Map<String, Station> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext emptyMap()
+        try {
+            ensureDatabaseFile()
+            val found = LinkedHashMap<String, Station>()
+            android.database.sqlite.SQLiteDatabase.openDatabase(databaseFile().path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY).use { db ->
+                for (id in ids) {
+                    db.rawQuery(
+                        "SELECT name, tags_json, country_code, language, homepage_url, favicon_url, stream_url, codec, bitrate_kbps FROM stations WHERE station_id = ?",
+                        arrayOf(id),
+                    ).use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            found[id] = Station(
+                                id = id,
+                                name = cursor.getString(0),
+                                streamUrl = cursor.getString(6),
+                                tags = org.json.JSONArray(cursor.getString(1)).let { array -> List(array.length()) { array.getString(it) } },
+                                country = cursor.getString(2),
+                                language = cursor.getString(3),
+                                codec = cursor.getString(7),
+                                bitrateKbps = cursor.getInt(8).takeIf { !cursor.isNull(8) },
+                                homepageUrl = cursor.getString(4),
+                                faviconUrl = cursor.getString(5),
+                            )
+                        }
+                    }
+                }
+                val missing = ids.toSet() - found.keys
+                val hashQueryNeeded = missing.filter { it.startsWith("legacy-") || it.startsWith("radio-browser-") }
+                if (hashQueryNeeded.isNotEmpty()) {
+                    val remaining = hashQueryNeeded.toMutableSet()
+                    db.rawQuery(
+                        "SELECT name, tags_json, country_code, language, homepage_url, favicon_url, stream_url, codec, bitrate_kbps FROM stations",
+                        null,
+                    ).use { cursor ->
+                        val md = MessageDigest.getInstance("SHA-256")
+                        while (cursor.moveToNext() && remaining.isNotEmpty()) {
+                            val streamUrl = cursor.getString(6) ?: continue
+                            val urlBytes = streamUrl.toByteArray(Charsets.UTF_8)
+                            val shaHex = md.digest(urlBytes).take(8).joinToString("") { "%02x".format(it) }
+                            val legacyId = "legacy-$shaHex"
+                            if (legacyId in remaining) {
+                                found[legacyId] = Station(
+                                    id = legacyId,
+                                    name = cursor.getString(0),
+                                    streamUrl = streamUrl,
+                                    tags = org.json.JSONArray(cursor.getString(1)).let { array -> List(array.length()) { array.getString(it) } },
+                                    country = cursor.getString(2),
+                                    language = cursor.getString(3),
+                                    codec = cursor.getString(7),
+                                    bitrateKbps = cursor.getInt(8).takeIf { !cursor.isNull(8) },
+                                    homepageUrl = cursor.getString(4),
+                                    faviconUrl = cursor.getString(5),
+                                )
+                                remaining.remove(legacyId)
+                            }
+                            var h = 0L
+                            for (b in urlBytes) {
+                                h = h * 109L + (b.toLong() and 0xFFL)
+                            }
+                            val rbId = "radio-browser-" + java.lang.Long.toUnsignedString(h)
+                            if (rbId in remaining) {
+                                found[rbId] = Station(
+                                    id = rbId,
+                                    name = cursor.getString(0),
+                                    streamUrl = streamUrl,
+                                    tags = org.json.JSONArray(cursor.getString(1)).let { array -> List(array.length()) { array.getString(it) } },
+                                    country = cursor.getString(2),
+                                    language = cursor.getString(3),
+                                    codec = cursor.getString(7),
+                                    bitrateKbps = cursor.getInt(8).takeIf { !cursor.isNull(8) },
+                                    homepageUrl = cursor.getString(4),
+                                    faviconUrl = cursor.getString(5),
+                                )
+                                remaining.remove(rbId)
+                            }
+                        }
+                    }
+                }
+            }
+            found
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    private fun databaseFile() = context.getDatabasePath("rockmobile-$EXTENDED_VERSION.db")
+
+    private fun ensureDatabaseFile() {
+        val target = databaseFile()
+        if (target.exists()) return
+        target.parentFile?.mkdirs()
+        context.assets.open(EXTENDED_ASSET).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+    }
+
     override suspend fun load(): List<Station> = database.catalogue().initialStations(INITIAL_PAGE_SIZE).map(ExtendedStation::toStation)
 
-    override suspend fun station(id: String): Station? = database.catalogue().station(id)?.toStation()
+    override suspend fun station(id: String): Station? = stationsById(listOf(id))[id] ?: database.catalogue().station(id)?.toStation()
 
     override suspend fun search(query: String, genre: String?, country: String?, language: String?): List<Station> {
         val terms = searchTerms(query, genre)

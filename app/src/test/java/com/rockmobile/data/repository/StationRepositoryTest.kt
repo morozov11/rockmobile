@@ -44,6 +44,15 @@ class StationRepositoryTest {
         assertEquals(station, StationRepository(remote, local(emptyList()), fallback).resolveStation(station.id))
     }
 
+    @Test fun resolveStation_readsServerFirst() = runTest {
+        val remote = object : RemoteStationSource {
+            override suspend fun search(query: String) = emptyList<Station>()
+            override suspend fun station(id: String): Station = station
+        }
+        val fallback = local(emptyList())
+        assertEquals(station, StationRepository(remote, local(emptyList()), fallback).resolveStation(station.id))
+    }
+
     @Test fun search_sendsSelectedFiltersAsNaturalLanguageToRockserver() = runTest {
         var requestedQuery: String? = null
         val remote = object : RemoteStationSource {

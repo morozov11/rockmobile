@@ -75,12 +75,30 @@ class RockcastAssetStationSource(
                 else -> error("Unknown tombstone reason")
             }
         }
-        return LocalCatalogIndex(stations.map { it.station.id }.toSet(), stations.flatMap { value -> value.legacyIds.map { it to value.station.id } }.toMap(), merged, splits, removed, PINNED_CATALOG_VERSION)
+        val legacyMap = mutableMapOf<String, String>()
+        for (value in stations) {
+            for (legacyId in value.legacyIds) {
+                legacyMap[legacyId] = value.station.id
+                if (legacyId.startsWith("rockmobile:rockcast-")) {
+                    legacyMap["legacy-" + legacyId.removePrefix("rockmobile:rockcast-")] = value.station.id
+                }
+            }
+        }
+        return LocalCatalogIndex(stations.map { it.station.id }.toSet(), legacyMap, merged, splits, removed, PINNED_CATALOG_VERSION)
     }
     override suspend fun load(): List<Station> {
         val bytes = assets.open(ASSET_NAME).use { it.readBytes() }
         val stations = parseSharedCatalog(bytes, PINNED_CATALOG_VERSION, PINNED_SHA256)
-        migrateLegacyIds(stations.flatMap { entry -> entry.legacyIds.map { legacyId -> legacyId to entry.station.id } }.toMap())
+        val legacyMap = mutableMapOf<String, String>()
+        for (entry in stations) {
+            for (legacyId in entry.legacyIds) {
+                legacyMap[legacyId] = entry.station.id
+                if (legacyId.startsWith("rockmobile:rockcast-")) {
+                    legacyMap["legacy-" + legacyId.removePrefix("rockmobile:rockcast-")] = entry.station.id
+                }
+            }
+        }
+        migrateLegacyIds(legacyMap)
         return orderLikeRockcast(stations.map { it.station })
     }
 

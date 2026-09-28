@@ -5,7 +5,16 @@
 | `MainActivity.kt` | Composition root, playback/voice wiring и permission flow |
 | `data/api/RockserverApi.kt` | HTTP boundary серверного каталога |
 | `data/dto/RockserverDtos.kt` | Строгий разбор station JSON |
+| `data/personal/PersonalData.kt` | Офлайн-профиль favourites/history: RM-007-A правила, миграция v1→v2 (бэкфилл history `updatedAt` с бэкапом и журналом), применение sync-записей через `update()` и restore-and-remap без карантина (как в RockCast) |
+| `data/personal/PersonalSyncApply.kt` | Чистое применение входящих RM-012 записей: tombstones, strict-LWW, пропуск невалидных записей на границе |
+| `personalsync/PersonalSyncDtos.kt` | Строгие kotlinx wire-DTO `POST /api/v1/sync` (snake_case, отдельные от локальной camelCase-модели) |
+| `personalsync/PersonalSyncApi.kt` | Тонкий sync-клиент над `RockserverApi` и типизированные ошибки (401/429/422/503) |
+| `personalsync/PersonalSyncState.kt` | Per-device курсор + acknowledged-base: diff, tombstone-штамп, чанкинг ≤300, next-state, SharedPrefs-персистентность с резетом при новой пайринге/профиле |
+| `personalsync/PersonalSyncEngine.kt` | Один push+pull цикл: батчи с прошивкой курсора, один 401-renew-повтор на запрос, backoff |
+| `personalsync/PersonalSyncCoordinator.kt` | Event-driven триггеры (старт, дебаунс ~10 с, pull ~5 мин, foreground), статус для аккаунт-экрана, безопасный лог фаз/счётчиков |
+| `account/NativeSessionManager.kt` | Переиспользуемый refresh native device-session (access-токен ротируется, device-secret нет) |
 | `data/stations/StationSources.kt` | Rockserver и bundled RockCast источники |
+| `data/stations/ExtendedCatalogStationSource.kt` | Room-backed расширенный каталог + Room-free `stationsById` (имена/потоки станций вне загруженного каталога для персональных списков) |
 | `data/stations/StationIconLoader.kt` | Bounded fetch/decode/cache иконок станций |
 | `data/repository/StationRepository.kt` | Remote-first и fallback policy |
 | `domain/model/Station.kt` | Независимая модель станции и каталога |

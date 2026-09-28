@@ -43,6 +43,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rockmobile.BuildConfig
+import com.rockmobile.personalsync.PersonalSyncStatus
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -50,7 +51,7 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
-fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> Unit) {
+fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, syncStatus: PersonalSyncStatus? = null, dismiss: () -> Unit) {
     val state = viewModel.state.collectAsStateWithLifecycle().value
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -152,6 +153,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                         Text("RockMobile подключён", style = MaterialTheme.typography.headlineSmall)
                         Text("Аккаунт: ${state.profile.accountDisplayName}")
                         Text("Это устройство: ${presentDeviceDisplayName(state.profile.deviceType, state.profile.deviceDisplayName)}")
+                        personalSyncStatusLine(syncStatus)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         Button(onClick = {
                             viewModel.acknowledgeFirstTimeConnection()
                             dismissDialog()
@@ -169,6 +171,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, dismiss: () -> U
                         Text("Аккаунт: ${state.profile.accountDisplayName}")
                         Text("Этот телефон: ${presentDeviceDisplayName(state.profile.deviceType, state.profile.deviceDisplayName)}")
                         Text("Лимит аккаунта: до 50 устройств")
+                        personalSyncStatusLine(syncStatus)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         if (!state.devicesAvailable) {
                             Text("Список устройств временно недоступен. Подключение телефона уже не заблокировано; попробуйте обновить позже.")
                         } else if (state.devices.isEmpty()) {
@@ -242,6 +245,20 @@ internal fun disconnectedPrimaryCopy() = "Подключите RockMobile к с�
 internal fun disconnectedSecondaryCopy() = "Радио и сохранённые станции работают без аккаунта."
 
 internal fun visibleBuild() = "${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_REVISION})"
+
+/** One-line personal-data sync status for the account screen; null hides the line entirely. */
+internal fun personalSyncStatusLine(status: PersonalSyncStatus?, zone: ZoneId = ZoneId.systemDefault()): String? = when (status) {
+    null, PersonalSyncStatus.Off -> null
+    PersonalSyncStatus.Idle -> "Избранное и история синхронизируются с аккаунтом."
+    PersonalSyncStatus.Syncing -> "Синхронизация избранного и истории…"
+    is PersonalSyncStatus.Ok -> {
+        val at = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()).withZone(zone).format(Instant.ofEpochMilli(status.lastSyncAtMs))
+        val applied = if (status.appliedRecords > 0) ", применено записей: ${status.appliedRecords}" else ""
+        "Синхронизация выполнена в $at$applied"
+    }
+    is PersonalSyncStatus.Error ->
+        if (status.retryScheduled) "Синхронизация не выполнена — повторим автоматически." else "Синхронизация не выполнена; повторим при следующем изменении."
+}
 
 @Composable
 private fun QrCode(link: String, description: String) {

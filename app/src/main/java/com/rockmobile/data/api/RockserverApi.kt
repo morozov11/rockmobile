@@ -101,6 +101,10 @@ class RockserverApi(
     fun post(baseUrl: String, route: String, bearerToken: String = "", body: JSONObject = JSONObject()): HttpResponse =
         transport.post(endpoint(baseUrl, route), bearerToken, body.toString())
 
+    /** Raw JSON body variant for callers that serialize with kotlinx.serialization. */
+    fun postJson(baseUrl: String, route: String, bearerToken: String, jsonBody: String): HttpResponse =
+        transport.post(endpoint(baseUrl, route), bearerToken, jsonBody)
+
     fun get(baseUrl: String, route: String, bearerToken: String): HttpResponse =
         transport.get(endpoint(baseUrl, route), bearerToken)
 

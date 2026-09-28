@@ -1,5 +1,90 @@
 # RockMobile status
 
+## RM-012-C — live two-device acceptance round (2026-09-28 evening)
+
+The first real RockMobile↔RockCast sync run exposed the RM-007-A quarantine as the single root
+cause of both reported defects. "Радио Ваня" had been a favourite on the phone until
+2026-09-18, when `reconcile` quarantined it (`unresolved`, shown as "Station unavailable")
+because its radio-browser id is not in the 41-station bundled catalog — so sync never saw it
+as a record and RockCast could never receive it. Worse: the favourites synced from RockCast
+(rb-*/legacy-*) would be quarantined on the next app restart, after which the sync diff would
+have pushed tombstones and deleted them account-wide.
+
+Fix, ported one-to-one from RockCast's own `restore-and-remap` (quarantine is disabled there
+already): nothing is quarantined anymore — a station id the catalog cannot resolve stays in
+the profile (listed, plays nothing until discoverable); known legacy ids are still rewritten
+(with an `updatedAt` advance so the rewrite wins server LWW); every previously quarantined
+reference returned to the live collections with its original station id, `referenceId` as
+record id and `firstSeenAt` as timestamps. Tombstones now only ever originate from explicit
+user deletions (`toggleFavourite` off, `clearHistory`), which is what the diff always assumed.
+
+A second, older defect surfaced during verification: Room rejects the prebuilt extended
+catalog with `IllegalStateException: Pre-packaged database has an invalid schema`, so the
+extended fallback and any Room-based lookup have been silently failing (the app fell back to
+the bundled list; `runCatching` hid it). Personal-data name/stream resolution now uses a
+Room-free read-only SQLite connection over the verified database copy
+(`ExtendedCatalogStationSource.stationsById`), which needs no schema validation.
+
+Verified live on the connected phone and the desktop: the restore brought the phone from 9 to
+11 favourites (Радио Ваня Туапсе, RadioBOB) with names, pushed them (cursor 384→489), and
+RockCast pulled both within minutes; the phone's Favourites/History dialogs now render all
+synced records with names, tags and playable streams; copy says "Synced with your Rock
+account" while connected. Full checks green (`:app:testDebugUnitTest` incl. rewritten
+quarantine tests, `:app:lintDebug`, `:app:assembleDebug`, `git diff --check`). Note: on this
+phone the app's own logcat tags produce no output (OEM suppression), so acceptance was
+verified from device data — prefs, sync state, UI dumps and the RockCast log/profile.
+
+## RM-012-C — client favourites/history sync with RockServer (implemented locally, 2026-09-28)
+
+RockMobile now syncs the RM-007-A personal profile with `POST /api/v1/sync` on
+`https://rockplatform.win` (RockCast RM-012-B experience ported, not reinvented).
+The cycle is event-driven without WorkManager: startup, a ~10 s debounced push after local
+edits, a ~5 min periodic pull, and a cycle on foreground return / opening the account screen.
+Cycles never touch the main thread and never block the UI; offline radio keeps working
+exactly as before when the server is unreachable.
+
+Key mechanics, mirroring RockCast where the contract is shared:
+
+- Wire DTOs live in `personalsync/PersonalSyncDtos.kt` as strict snake_case kotlinx types
+  (the `DirectoryJson` pattern); the local profile stays camelCase org.json.
+- `HistoryEntry` gained `updatedAt`. Schema v1→v2 migration backfills
+  `updatedAt = lastPlayedAt` through the existing backup-plus-journal mechanism
+  (`profile.pre-migration`, `profile.migration-journal`); `recordPlay`/coalescing keep the
+  stamp current, and a station-id rewrite in `reconcile` now advances `updatedAt` so the
+  rewritten record can win server-side LWW instead of tying forever.
+- Per-device state (cursor + acknowledged base of exact pushed record versions) is persisted
+  in the profile SharedPreferences; a new pairing (`deviceId` change) or a recreated profile
+  (`profileId` change) resets it to `since_revision=0` (full snapshot) plus a full local push.
+- Push batches are chunked to ≤300 per collection, and each chunk response's
+  `server_revision` becomes the next chunk's `since_revision`, so later chunks pull deltas.
+  The acknowledged base is rebuilt from the pushed snapshot plus the response echoes:
+  records created mid-cycle are not marked acknowledged (still pushed next cycle), records
+  deleted mid-cycle keep their snapshot version (tombstoned next cycle).
+- Applying the response goes through `PersonalDataStore.applySyncRecords` → `update()`:
+  tombstones delete by `record_id`, strict-newer `updated_at` replaces (ties keep local),
+  malformed records (bad UUID, unknown station-id shape, unparsable time) are skipped at the
+  boundary, and re-applying the same response is a no-op. Losing-push echoes leave the local
+  winner untouched.
+- The cursor is persisted only after the response is durably applied.
+- Errors follow the contract: 401 → one session renewal and resend per request;
+  429/503 → exponential per-device backoff (1…16 min); 422 → the batch is rejected
+  (`details.field` surfaced in status, no backoff); the account screen shows one sync status
+  line; logs carry phases/counters only and never tokens.
+- Session refresh (`ensureFreshAccessToken`/`renewDeviceSession`) was extracted from
+  `AccountViewModel` into the shared `NativeSessionManager` used by both account calls and
+  the sync channel — no duplicated renewal code, tokens never copied anywhere.
+
+Known v1 limitation (unchanged, by design): one listening session recorded independently by
+two devices stays as two history records; coalescing is local-only, the server does not
+deduplicate.
+
+Verified with `:app:testDebugUnitTest` (186 tests, 0 failed — including LWW/tombstone/echo,
+cursor threading and chunking, 401-renew-retry, 429/503 backoff, 422, first-sync full
+push+snapshot, migration backfill, idempotency, pairing reset), `:app:lintDebug`,
+`:app:assembleDebug`, and `git diff --check`. The final two-device acceptance run
+(RockCast + RockMobile on one account) is the remaining open item of RM-012-B/C and
+requires physical devices; no such run is claimed here.
+
 ## Voice control recovery (2026-09-26)
 
 The phone restores local player volume as soon as microphone recording ends, before waiting for

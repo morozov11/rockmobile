@@ -46,12 +46,17 @@ import com.rockmobile.voice.VoicePlaybackActions
 import com.rockmobile.account.AccountDialog
 import com.rockmobile.account.AccountViewModel
 import com.rockmobile.account.KeystoreCredentialStore
+import com.rockmobile.account.NativeSessionManager
 import com.rockmobile.account.RockserverAccountGateway
 import com.rockmobile.account.accountSessionActive
 import com.rockmobile.devicecontrol.DeviceControlDirectoryApi
 import com.rockmobile.devicecontrol.OkHttpDirectorySocketFactory
 import com.rockmobile.devicecontrol.TargetDirectoryRepository
 import com.rockmobile.devicecontrol.TargetDirectoryViewModel
+import com.rockmobile.personalsync.PersonalSyncApi
+import com.rockmobile.personalsync.PersonalSyncCoordinator
+import com.rockmobile.personalsync.RockserverSyncChannel
+import com.rockmobile.personalsync.SharedPrefsPersonalSyncStateStore
 
 internal data class LocalPlaybackTransfer(
     val localStationId: String,
@@ -72,6 +77,7 @@ internal fun localTransferConfirmed(
 
 class MainActivity : ComponentActivity() {
     private var accountViewModel: AccountViewModel? = null
+    private lateinit var personalSync: PersonalSyncCoordinator
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -80,15 +86,26 @@ class MainActivity : ComponentActivity() {
         val personalData = PersonalDataStore(this)
         val baseline = RockcastAssetStationSource(assets, unavailableVoiceStations::migrateLegacyIds)
         personalData.reconcile(baseline.personalCatalogIndex())
+        val extendedCatalog = ExtendedCatalogStationSource(this)
         val repository = StationRepository(
             RockserverStationSource(RockserverApi(), settings::rockserverUrl, settings::bearerToken),
             primary = baseline,
-            offlineSearch = FallbackLocalStationSource(ExtendedCatalogStationSource(this), baseline),
+            offlineSearch = FallbackLocalStationSource(extendedCatalog, baseline),
         )
+        val credentialStore = KeystoreCredentialStore(applicationContext)
+        val accountGateway = RockserverAccountGateway(RockserverApi(), settings::rockserverUrl)
+        val sessionManager = NativeSessionManager(accountGateway, credentialStore)
+        personalSync = PersonalSyncCoordinator(
+            channel = RockserverSyncChannel(PersonalSyncApi(RockserverApi(), settings::rockserverUrl), sessionManager),
+            profileState = personalData.state,
+            applyRecords = personalData::applySyncRecords,
+            stateStore = SharedPrefsPersonalSyncStateStore(applicationContext),
+        )
+        personalSync.start(lifecycleScope)
         setContent {
             RockmobileTheme {
             val model: StationsViewModel = viewModel(factory = StationsViewModelFactory(repository, unavailableVoiceStations::unavailableStationIds))
-            val account = viewModel<AccountViewModel>(factory = AccountViewModelFactory(RockserverAccountGateway(RockserverApi(), settings::rockserverUrl), KeystoreCredentialStore(applicationContext))).also { accountViewModel = it }
+            val account = viewModel<AccountViewModel>(factory = AccountViewModelFactory(accountGateway, credentialStore, sessionManager)).also { accountViewModel = it }
             val targetDirectory = viewModel<TargetDirectoryViewModel>(factory = TargetDirectoryViewModelFactory(
                 TargetDirectoryRepository(DeviceControlDirectoryApi(RockserverApi(), settings::rockserverUrl), OkHttpDirectorySocketFactory(), settings),
                 account::directorySession,
@@ -124,8 +141,28 @@ class MainActivity : ComponentActivity() {
                 if (catalogue.any { it.id == id }) return@LaunchedEffect
                 resolvedRemoteStation = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { repository.resolveStation(id) }
             }
-            val displayCatalogue = resolvedRemoteStation?.takeIf { resolved -> catalogue.none { it.id == resolved.id } }
-                ?.let { catalogue + it } ?: catalogue
+            // Personal records synced from other devices reference stations outside the loaded
+            // catalogue; the extended offline catalog supplies their names and streams locally,
+            // falling back to RockServer by station ID when missing locally.
+            val personalStationIds = (personal.favourites.map { it.stationId } + personal.history.map { it.stationId })
+                .toSet() - catalogue.mapTo(mutableSetOf()) { it.id }
+            var personalStations by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Map<String, com.rockmobile.domain.model.Station>>(emptyMap()) }
+            androidx.compose.runtime.LaunchedEffect(personalStationIds) {
+                val local = extendedCatalog.stationsById(personalStationIds)
+                val missingIds = personalStationIds - local.keys
+                personalStations = local
+                if (missingIds.isNotEmpty()) {
+                    val resolved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        missingIds.mapNotNull { id ->
+                            repository.resolveStation(id)?.let { id to it }
+                        }.toMap()
+                    }
+                    if (resolved.isNotEmpty()) {
+                        personalStations = local + resolved
+                    }
+                }
+            }
+            val displayCatalogue = (catalogue + personalStations.values + listOfNotNull(resolvedRemoteStation)).distinctBy { it.id }
 
             androidx.compose.runtime.LaunchedEffect(liveState.overrideNotice) {
                 val notice = liveState.overrideNotice ?: return@LaunchedEffect
@@ -135,7 +172,7 @@ class MainActivity : ComponentActivity() {
             }
 
             var phoneOutputOverride by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<Boolean?>(null) }
-            val phoneOutput = phoneOutputOverride ?: (selectedTarget == null)
+            val phoneOutput = phoneOutputOverride ?: (selectedTarget?.usable != true)
             var pendingLocalTransfer by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<LocalPlaybackTransfer?>(null) }
             val currentPhoneOutput by androidx.compose.runtime.rememberUpdatedState(phoneOutput)
             val currentSelectedTarget by androidx.compose.runtime.rememberUpdatedState(selectedTarget)
@@ -308,6 +345,7 @@ class MainActivity : ComponentActivity() {
                 onDismissVoice = voice::dismiss,
                 openStation = openStation,
                 personal = personal,
+                personalStations = personalStations.values.toList(),
                 toggleFavourite = { station -> personalData.toggleFavourite(station) },
                 openAccount = { account.ensureSessionVisible(); accountOpen = true },
                 openDevices = { devicesScreen = true },
@@ -323,7 +361,10 @@ class MainActivity : ComponentActivity() {
                 remoteStop = { liveStore.requestStop(miniRemote?.targetId) },
                 snackbarHostState = snackbarHostState,
             )
-            if (accountOpen) AccountDialog(account, settings.rockserverUrl()) { accountOpen = false }
+            if (accountOpen) {
+                androidx.compose.runtime.LaunchedEffect(accountOpen) { personalSync.requestSync() }
+                AccountDialog(account, settings.rockserverUrl(), personalSync.status.collectAsStateWithLifecycle().value) { accountOpen = false }
+            }
             }
         }
     }
@@ -332,6 +373,12 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (isRockmobileReturnIntent(intent)) accountViewModel?.resumePairing(fromBrowser = true)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Returning to the foreground is the cheapest cross-device convergence trigger.
+        if (::personalSync.isInitialized) personalSync.requestSync()
     }
 }
 
@@ -365,8 +412,10 @@ private class StationsViewModelFactory(
 private class AccountViewModelFactory(
     private val gateway: RockserverAccountGateway,
     private val store: KeystoreCredentialStore,
+    private val sessionManager: NativeSessionManager,
 ) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = AccountViewModel(gateway, store) as T
+    @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        AccountViewModel(gateway, store, sessionManager = sessionManager) as T
 }
 
 private class TargetDirectoryViewModelFactory(

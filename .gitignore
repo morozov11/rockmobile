@@ -9,3 +9,6 @@ keystore/
 /.gradle-user-home/
 /.kotlin/
 /graphify-out/
+hs_err_*.log
+replay_*.log
+app/hs_err_*.log

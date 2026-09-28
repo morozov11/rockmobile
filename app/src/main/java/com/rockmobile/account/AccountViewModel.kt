@@ -61,6 +61,7 @@ class AccountViewModel(
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val pairingTimeoutMs: Long = DEFAULT_PAIRING_TIMEOUT_MS,
     private val pairingPollMs: Long = DEFAULT_PAIRING_POLL_MS,
+    sessionManager: NativeSessionManager? = null,
 ) : ViewModel() {
     private data class PendingPairing(val request: PairingRequest, val deadlineMs: Long)
 
@@ -68,8 +69,8 @@ class AccountViewModel(
     val state: StateFlow<AccountUiState> = _state.asStateFlow()
     private var pairingJob: Job? = null
     private var pendingPairing: PendingPairing? = null
-    private val deviceSessionMutex = Mutex()
     private val accountSessionMutex = Mutex()
+    private val sessions: NativeSessionManager = sessionManager ?: NativeSessionManager(gateway, store, ioDispatcher, nowMs)
 
     init {
         viewModelScope.launch { bootstrapAccountState() }
@@ -284,46 +285,13 @@ class AccountViewModel(
             withContext(ioDispatcher) { block(credentials.accessToken) }
         } catch (error: ApiError) {
             if (error.statusCode != 401) throw error
-            val fresh = renewDeviceSession(credentials.deviceId)
+            val fresh = sessions.renew(credentials.deviceId)
             withContext(ioDispatcher) { block(fresh.accessToken) }
         }
     }
 
-    private suspend fun ensureFreshAccessToken(): NativeCredentials {
-        val current = withContext(ioDispatcher) { store.load() } ?: throw IllegalStateException("No session")
-        if (!accessTokenNeedsRefresh(current.accessExpiresAtMs, nowMs())) return current
-        return renewDeviceSession(current.deviceId)
-    }
-
-    /** Replaces only the short-lived access token; the durable device secret never rotates. */
-    private suspend fun renewDeviceSession(expectedDeviceId: String): NativeCredentials =
-        deviceSessionMutex.withLock {
-            val current = withContext(ioDispatcher) { store.load() }
-                ?: throw IllegalStateException("No session")
-            if (current.deviceId != expectedDeviceId) {
-                return current
-            }
-            try {
-                val freshAccessToken = withContext(ioDispatcher) {
-                    gateway.createDeviceSession(current.deviceId, current.deviceSecret)
-                }
-                persistCredentials(freshAccessToken)
-                freshAccessToken
-            } catch (error: ApiError) {
-                if (error.code == "device_credential_invalid") {
-                    val stillCurrent = withContext(ioDispatcher) { store.load() }
-                    if (stillCurrent?.deviceId == expectedDeviceId) {
-                        SessionLog.credentialsCleared("device credential revoked")
-                        withContext(ioDispatcher) { store.clear() }
-                    }
-                }
-                throw error
-            }
-        }
-
-    private suspend fun persistCredentials(credentials: NativeCredentials) {
-        withContext(ioDispatcher) { store.save(credentials) }
-    }
+    private suspend fun ensureFreshAccessToken(): NativeCredentials =
+        sessions.currentSession() ?: throw IllegalStateException("No session")
 
     private suspend fun awaitPairing(pending: PendingPairing) {
         while (pendingPairing == pending && nowMs() < pending.deadlineMs) {
@@ -331,7 +299,7 @@ class AccountViewModel(
                 val result = withContext(ioDispatcher) { gateway.completePairing(pending.request) }
                 if (pendingPairing != pending) return
                 withContext(ioDispatcher) {
-                    persistCredentials(result.second)
+                    store.save(result.second)
                     store.saveProfile(result.first)
                     store.clearPendingPairing()
                 }

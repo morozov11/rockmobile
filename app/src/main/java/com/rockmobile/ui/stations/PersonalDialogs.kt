@@ -27,6 +27,7 @@ import java.util.Locale
 internal fun PersonalFavouritesDialog(
     data: PersonalData,
     stations: List<Station>,
+    synced: Boolean,
     onDismiss: () -> Unit,
     onPlay: (Station) -> Unit,
 ) {
@@ -36,6 +37,7 @@ internal fun PersonalFavouritesDialog(
     PersonalStationListDialog(
         title = "Favourites",
         emptyMessage = "No favourite stations yet. Tap ☆ in the station list.",
+        synced = synced,
         stations = favourites,
         unavailable = unavailable,
         onDismiss = onDismiss,
@@ -47,6 +49,7 @@ internal fun PersonalFavouritesDialog(
 internal fun PersonalHistoryDialog(
     data: PersonalData,
     stations: List<Station>,
+    synced: Boolean,
     onDismiss: () -> Unit,
     onPlay: (Station) -> Unit,
     onClearHistory: () -> Unit,
@@ -65,7 +68,7 @@ internal fun PersonalHistoryDialog(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    "Stored only on this device",
+                    personalStorageCopy(synced),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -91,10 +94,15 @@ internal fun PersonalHistoryDialog(
     )
 }
 
+/** Storage copy for the personal lists; sync only applies to a connected Rock account. */
+internal fun personalStorageCopy(synced: Boolean): String =
+    if (synced) "Synced with your Rock account" else "Stored only on this device"
+
 @Composable
 private fun PersonalStationListDialog(
     title: String,
     emptyMessage: String,
+    synced: Boolean,
     stations: List<Station>,
     unavailable: List<UnresolvedReference>,
     onDismiss: () -> Unit,
@@ -111,7 +119,7 @@ private fun PersonalStationListDialog(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    "Stored only on this device",
+                    personalStorageCopy(synced),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

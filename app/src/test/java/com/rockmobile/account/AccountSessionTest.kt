@@ -5,6 +5,7 @@ import com.rockmobile.data.api.HttpResponse
 import com.rockmobile.data.api.HttpTransport
 import com.rockmobile.data.api.RockserverApi
 import com.rockmobile.data.api.ApiError
+import com.rockmobile.personalsync.PersonalSyncStatus
 import com.rockmobile.ui.stations.rockMobileLogoDescription
 import com.rockmobile.ui.stations.rockMobileTitle
 import kotlinx.coroutines.Dispatchers
@@ -532,6 +533,19 @@ class AccountSessionTest {
         } finally {
             Dispatchers.resetMain()
         }
+    }
+
+    @Test fun personalSyncStatusLine_hidesWhenOffAndFormatsTheRest() {
+        assertEquals(null, personalSyncStatusLine(null))
+        assertEquals(null, personalSyncStatusLine(PersonalSyncStatus.Off))
+        assertEquals("Избранное и история синхронизируются с аккаунтом.", personalSyncStatusLine(PersonalSyncStatus.Idle))
+        assertEquals("Синхронизация избранного и истории…", personalSyncStatusLine(PersonalSyncStatus.Syncing))
+        val utc = java.time.ZoneId.of("UTC")
+        val ok = PersonalSyncStatus.Ok(Instant.parse("2026-09-28T14:32:00Z").toEpochMilli(), 3, 1, 2)
+        assertEquals("Синхронизация выполнена в 14:32, применено записей: 3", personalSyncStatusLine(ok, utc))
+        assertEquals("Синхронизация выполнена в 14:32", personalSyncStatusLine(ok.copy(appliedRecords = 0), utc))
+        assertTrue(personalSyncStatusLine(PersonalSyncStatus.Error(retryScheduled = true))!!.contains("автоматически"))
+        assertTrue(personalSyncStatusLine(PersonalSyncStatus.Error(retryScheduled = false))!!.contains("следующем изменении"))
     }
 
     private class ScriptedTransport(

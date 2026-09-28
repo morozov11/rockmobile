@@ -50,7 +50,8 @@ class PlaybackController(
     }
 
     fun play(station: Station, stations: List<Station> = listOf(station), fromVoiceResult: Boolean = false) {
-        val playableStations = stations.ifEmpty { listOf(station) }
+        val baseStations = stations.ifEmpty { listOf(station) }
+        val playableStations = if (baseStations.any { it.id == station.id }) baseStations else listOf(station) + baseStations
         // A deferred replay preserves a user toggle made before the MediaSession connected.
         val deferredReplay = controller != null && pendingPlay?.station?.id == station.id
         if (!deferredReplay) pendingShouldPlay = true

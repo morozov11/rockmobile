@@ -51,6 +51,7 @@ fun StationsScreen(
     onDismissVoice: () -> Unit,
     openStation: (String) -> Unit,
     personal: PersonalData,
+    personalStations: List<Station> = emptyList(),
     toggleFavourite: (Station) -> Unit,
     openAccount: () -> Unit,
     openDevices: () -> Unit,
@@ -121,17 +122,19 @@ fun StationsScreen(
                 if (favouritesOpen && state is StationsUiState.Content) {
                     PersonalFavouritesDialog(
                         data = personal,
-                        stations = state.catalogue.stations,
+                        stations = state.catalogue.stations + personalStations,
+                        synced = accountConnected,
                         onDismiss = { favouritesOpen = false },
-                        onPlay = { station -> play(station, state.stations) },
+                        onPlay = { station -> play(station, state.catalogue.stations + personalStations) },
                     )
                 }
                 if (historyOpen && state is StationsUiState.Content) {
                     PersonalHistoryDialog(
                         data = personal,
-                        stations = state.catalogue.stations,
+                        stations = state.catalogue.stations + personalStations,
+                        synced = accountConnected,
                         onDismiss = { historyOpen = false },
-                        onPlay = { station -> play(station, state.stations) },
+                        onPlay = { station -> play(station, state.catalogue.stations + personalStations) },
                         onClearHistory = clearHistory,
                     )
                 }

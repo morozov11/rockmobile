@@ -1,5 +1,61 @@
 # RockMobile task log
 
+## RM-012-C — 2026-09-28 — live acceptance fixes: quarantine removal port
+
+- Goal: close the two-device acceptance defects reported live — the phone's favourites list
+  looked purely local, and "Радио Ваня" favourited on the phone never reached RockCast.
+- Scope: port RockCast's `restore-and-remap` to `resolvePersonalData` (quarantine removed
+  entirely; unresolved references restored as live records with original ids; known legacy
+  rewrites still advance `updatedAt`); Room-free `stationsById` read-only lookup in
+  `ExtendedCatalogStationSource` for names/streams of stations outside the loaded catalogue
+  (Room's pre-packaged identity check rejects the asset — pre-existing silent failure);
+  Favourites/History dialogs render resolved stations and show synced-storage copy while an
+  account is connected; `MainActivity` resolves personal station ids against the extended
+  catalog off the main thread.
+- Result: root cause of both complaints was the RM-007-A quarantine (vanya quarantined on the
+  phone since 2026-09-18; synced rb-* favourites would have been tombstoned account-wide on
+  the next restart). After the port, live evidence: phone 9→11 favourites (Радио Ваня Туапсе,
+  RadioBOB restored with names), pushed at cursor 384→489, RockCast pulled both; the phone's
+  Favourites dialog lists all 11 records with names, tags and playable streams; history
+  converges on both sides.
+- Checks: `:app:testDebugUnitTest` (rewritten quarantine tests: unresolvable ids stay,
+  references restore), `:app:lintDebug`, `:app:assembleDebug`, `git diff --check` — green.
+  Live two-device evidence collected from prefs/sync-state/UI dumps and the RockCast log
+  (app logcat tags produce no output on this phone).
+- Status: two-device acceptance for add/restore→arrival and convergence performed live with
+  real data; explicit deletion propagation covered by unit tests, not re-verified live.
+
+## RM-012-C — 2026-09-28 — client favourites/history sync with RockServer
+
+- Goal: converge RockMobile favourites and playback history with the account on
+  `https://rockplatform.win` through `POST /api/v1/sync` (RM-012-A contract), porting the
+  RockCast RM-012-B experience instead of reinventing it.
+- Scope: strict snake_case kotlinx wire DTOs (`personalsync/PersonalSyncDtos.kt`) kept apart
+  from the camelCase org.json profile; `HistoryEntry.updatedAt` with a schema v1→v2
+  backfill (`updatedAt = lastPlayedAt`) through the existing backup-plus-journal migration;
+  per-device sync state (cursor + acknowledged base) in the profile SharedPreferences with a
+  reset on new pairing or recreated profile; batch chunking ≤300 per collection with cursor
+  threading between chunks; response application via `PersonalDataStore.applySyncRecords`
+  (tombstones, strict LWW, boundary validation, idempotency); event-driven triggers
+  (startup, ~10 s edit debounce, ~5 min pull, foreground/account-dialog) without
+  WorkManager and off the main thread; 401→renew→resend once, 429/503 backoff, 422 surfacing;
+  session refresh extracted into `account/NativeSessionManager.kt` shared with
+  `AccountViewModel`; one sync status line in the account dialog; phase/counter-only logging.
+- Result: a paired phone pulls the full account snapshot on first sync and pushes its local
+  profile; local edits and deletions reach the server as upserts and tombstones, remote
+  changes apply through the ordinary profile write path, and the cursor advances only after
+  a durably applied response. Offline radio behaviour is unchanged. Known v1 limitation kept:
+  the same listening session recorded by two devices stays as two history records.
+- Checks: `:app:testDebugUnitTest` (186 tests, 0 failed; new suites: `PersonalSyncApplyTest`,
+  `PersonalSyncContractTest`, `PersonalSyncStateTest`, `PersonalSyncEngineTest`,
+  `PersonalSyncCoordinatorTest`, migration tests in `PersonalDataTest`, status-line test in
+  `AccountSessionTest`), `:app:lintDebug`, `:app:assembleDebug`, `git diff --check` — all
+  green with the mandated process-local `JAVA_TOOL_OPTIONS`.
+- Status: complete locally. The final two-device acceptance (favourite added on one device
+  appears on the other, deletion arrives as a tombstone, history converges after a couple of
+  syncs — the open RM-012-B item) requires physical RockCast + RockMobile devices and is not
+  claimed here.
+
 ## Remote output, station name and track metadata (2026-09-26)
 
 - Follow-up: a non-empty search field replaces its trailing microphone with clear and search icons. Clear restores the catalogue and microphone; search submits the typed query without recording audio. Typing keeps the current list visible, while the button closes the keyboard and shows progress or a failure reason. Tests cover explicit submission and preservation of server-ranked results.
