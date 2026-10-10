@@ -96,6 +96,22 @@ class TargetDirectoryRepositoryTest {
         assertEquals(null, repository.dispatch(RemoteCommand.Play))
     }
 
+    @Test fun clearSelection_clearsPersistedSelectionAndUpdatesState() = runTest {
+        val socket = FakeSockets()
+        val selections = MemorySelections()
+        val repository = repository(socket, selections, directory(1, rockCast()))
+        repository.start(this, session())
+        runCurrent()
+        repository.select("rockcast")
+        assertEquals("rockcast", selections.value)
+        assertEquals("rockcast", (repository.state.value as TargetDirectoryState.Available).selectedTargetId)
+        repository.clearSelection()
+        assertEquals(null, selections.value)
+        val state = repository.state.value as TargetDirectoryState.Available
+        assertEquals(null, state.selectedTargetId)
+        assertTrue(state.requiresSelection)
+    }
+
     @Test fun revisionGap_reloadsSnapshotAndSocketLossReconnectsOnce() = runTest {
         val socket = FakeSockets()
         val transport = QueueTransport(listOf(directory(1, rockCast()), directory(4, player("new"))))

@@ -157,15 +157,17 @@ fun StationPlayerScreen(
                             openSelector = { selectorOpen = true },
                         )
                         if (phoneOutput) {
-                            LocalOnAirIndicator(localPlayback)
+                            LocalOnAirIndicator(localPlayback, stationId)
+                            val isPlayingCurrentStation = localPlayback.isPlaying && localPlayback.station?.id == station?.id
                             LocalTransport(
-                                canSkipPrevious = localPlayback.canSkipPrevious,
-                                canSkipNext = localPlayback.canSkipNext,
-                                isPlaying = localPlayback.isPlaying,
+                                canSkipPrevious = previousStation != null || localPlayback.canSkipPrevious,
+                                canSkipNext = nextStation != null || localPlayback.canSkipNext,
+                                isPlaying = isPlayingCurrentStation,
+                                play = { station?.let { playLocal(it, stations) } },
                                 toggle = toggleLocal,
                                 stop = stopLocal,
-                                previous = previousLocal,
-                                next = nextLocal,
+                                previous = { previousStation?.let { playLocal(it, stations) } ?: previousLocal() },
+                                next = { nextStation?.let { playLocal(it, stations) } ?: nextLocal() },
                             )
                             localPlayback.error?.let {
                                 Spacer(Modifier.height(8.dp))
@@ -299,11 +301,12 @@ private fun RemoteOnAirIndicator(presentation: com.rockmobile.devicecontrol.Live
 }
 
 @Composable
-private fun LocalOnAirIndicator(state: PlaybackState) {
+private fun LocalOnAirIndicator(state: PlaybackState, currentStationId: String) {
+    val isCurrent = state.station?.id == currentStationId
     val (label, color) = when {
-        state.isPlaying -> "● В ЭФИРЕ · Воспроизводится" to MaterialTheme.colorScheme.primary
-        state.error != null -> "Ошибка воспроизведения" to MaterialTheme.colorScheme.error
-        state.station != null -> "Приостановлено" to MaterialTheme.colorScheme.onSurfaceVariant
+        state.isPlaying && isCurrent -> "● В ЭФИРЕ · Воспроизводится" to MaterialTheme.colorScheme.primary
+        state.error != null && isCurrent -> "Ошибка воспроизведения" to MaterialTheme.colorScheme.error
+        state.station != null && isCurrent -> "Приостановлено" to MaterialTheme.colorScheme.onSurfaceVariant
         else -> "Нажмите Play, чтобы слушать на телефоне" to MaterialTheme.colorScheme.onSurfaceVariant
     }
     Text(label, color = color, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 10.dp))
@@ -370,6 +373,7 @@ private fun LocalTransport(
     canSkipPrevious: Boolean,
     canSkipNext: Boolean,
     isPlaying: Boolean,
+    play: () -> Unit,
     toggle: () -> Unit,
     stop: () -> Unit,
     previous: () -> Unit,
@@ -377,7 +381,7 @@ private fun LocalTransport(
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp), modifier = Modifier.padding(top = 6.dp)) {
         IconButton(onClick = previous, enabled = canSkipPrevious, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.SkipPrevious, "Предыдущая станция", tint = if (canSkipPrevious) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = .35f)) }
-        IconButton(onClick = toggle, modifier = Modifier.size(68.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) {
+        IconButton(onClick = if (isPlaying) toggle else play, modifier = Modifier.size(68.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) {
             Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (isPlaying) "Пауза" else "Играть", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(34.dp))
         }
         IconButton(onClick = stop, modifier = Modifier.size(52.dp)) { Icon(Icons.Default.Stop, "Остановить", tint = MaterialTheme.colorScheme.onSurface) }
@@ -502,7 +506,8 @@ private fun OutputSelectorDialog(
                             )
                             Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(if (available.selectedTargetId == target.id) "✓ ${target.name}" else target.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                val isSelected = !phoneOutput && available.selectedTargetId == target.id
+                                Text(if (isSelected) "✓ ${target.name}" else target.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(if (enabled) status else "$status · управление недоступно", style = MaterialTheme.typography.labelSmall, color = if (online) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
                             }
                         }

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipNext
@@ -71,9 +72,11 @@ fun DeviceControlScreen(
     state: TargetDirectoryState,
     commands: Map<String, CommandLifecycle>,
     receivers: List<EphemeralReceiver>,
+    phoneOutput: Boolean = false,
     back: () -> Unit,
     refresh: () -> Unit,
     select: (String) -> Unit,
+    selectPhone: () -> Unit = {},
     dispatch: (RemoteCommand) -> Unit,
     openAccount: () -> Unit,
 ) {
@@ -92,9 +95,11 @@ fun DeviceControlScreen(
         DeviceHubScreen(
             state = state,
             commands = commands,
+            phoneOutput = phoneOutput,
             back = back,
             refresh = refresh,
             select = { targetId -> select(targetId) },
+            selectPhone = selectPhone,
             openRemote = { remoteOpen = true },
             openAccount = openAccount,
         )
@@ -105,9 +110,11 @@ fun DeviceControlScreen(
 private fun DeviceHubScreen(
     state: TargetDirectoryState,
     commands: Map<String, CommandLifecycle>,
+    phoneOutput: Boolean,
     back: () -> Unit,
     refresh: () -> Unit,
     select: (String) -> Unit,
+    selectPhone: () -> Unit,
     openRemote: () -> Unit,
     openAccount: () -> Unit,
 ) {
@@ -120,21 +127,26 @@ private fun DeviceHubScreen(
                 Text("Выберите, где будет звучать радио", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 state.notice?.let { Notice(it) }
                 Spacer(Modifier.height(12.dp))
+                PhoneDeviceCard(
+                    selected = phoneOutput || state.selectedTargetId == null,
+                    select = selectPhone,
+                )
+                Spacer(Modifier.height(10.dp))
                 if (state.targets.isEmpty()) {
-                    EmptyDevices("Нет устройств, доступных для управления.", "Обновить", refresh)
+                    EmptyDevices("Нет других устройств, доступных для управления.", "Обновить", refresh)
                 } else {
                     state.targets.forEach { target ->
                         DeviceCard(
                             target = target,
-                            selected = target.id == state.selectedTargetId,
+                            selected = !phoneOutput && target.id == state.selectedTargetId,
                             commandInFlight = commands.values.any { it.targetId == target.id && it.inFlight },
                             select = { select(target.id) },
                             openRemote = openRemote,
-                            canOpenRemote = target.id == state.selectedTargetId && state.mayControlMedia,
+                            canOpenRemote = !phoneOutput && target.id == state.selectedTargetId && state.mayControlMedia,
                         )
                         Spacer(Modifier.height(10.dp))
                     }
-                    if (state.requiresSelection) {
+                    if (state.requiresSelection && !phoneOutput) {
                         Text("Команды отправляются только на устройство, выбранное здесь.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -142,6 +154,40 @@ private fun DeviceHubScreen(
         }
     }
 }
+
+@Composable
+private fun PhoneDeviceCard(
+    selected: Boolean,
+    select: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = .6f)),
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.background, modifier = Modifier.size(46.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.PhoneAndroid, null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Этот телефон", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Мобильное воспроизведение", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (selected) Icon(Icons.Default.CheckCircle, "Выбрано", tint = MaterialTheme.colorScheme.primary)
+            }
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = select, modifier = Modifier.fillMaxWidth()) {
+                Text(if (selected) "Выбрано" else "Слушать на телефоне")
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun DeviceCard(

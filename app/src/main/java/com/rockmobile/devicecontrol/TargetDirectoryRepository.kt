@@ -86,6 +86,13 @@ internal class TargetDirectoryRepository(
         publish()
     }
 
+    fun clearSelection() {
+        val active = session ?: return
+        selections.clear(active.userId, active.deviceId)
+        publish()
+    }
+
+
     /** Refuses implicit, stale, unauthorized and duplicate dispatch before any frame leaves the phone. */
     fun dispatch(body: RemoteCommand, now: Instant = Instant.now()): String? {
         val active = session ?: return null

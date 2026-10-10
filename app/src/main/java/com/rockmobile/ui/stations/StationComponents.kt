@@ -305,7 +305,9 @@ internal fun StationTable(
     modifier: Modifier = Modifier,
     stations: List<Station>,
     currentStationId: String?,
+    isPlaying: Boolean = false,
     play: (Station) -> Unit,
+    pause: () -> Unit = {},
     openStation: (Station) -> Unit,
     favourites: Set<String>,
     toggleFavourite: (Station) -> Unit,
@@ -316,12 +318,15 @@ internal fun StationTable(
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp)) {
                 itemsIndexed(stations, key = { _, station -> station.id }) { index, station ->
+                    val isCurrent = currentStationId == station.id
                     StationRow(
                         station = station,
-                        current = currentStationId == station.id,
+                        current = isCurrent,
+                        isPlaying = isCurrent && isPlaying,
                         index = index,
                         favourite = station.id in favourites,
                         play = { play(station) },
+                        pause = pause,
                         openStation = { openStation(station) },
                         toggleFavourite = { toggleFavourite(station) },
                     )
@@ -354,8 +359,9 @@ internal fun LiveMiniPlayer(
     remoteStop: () -> Unit,
     localToggle: () -> Unit,
     localStop: () -> Unit,
+    phoneOutput: Boolean = false,
 ) {
-    val remoteActive = remote != null && (remote.status == com.rockmobile.devicecontrol.LivePlaybackStatusUi.Playing || remote.status == com.rockmobile.devicecontrol.LivePlaybackStatusUi.Buffering)
+    val remoteActive = !phoneOutput && remote != null && (remote.status == com.rockmobile.devicecontrol.LivePlaybackStatusUi.Playing || remote.status == com.rockmobile.devicecontrol.LivePlaybackStatusUi.Buffering)
     val localActive = local.station != null && local.isPlaying
     if (!remoteActive && !localActive) return
     val remoteStationId = remote?.confirmedStationId
@@ -364,8 +370,8 @@ internal fun LiveMiniPlayer(
     Surface(
         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clickable(onClick = {
             when {
-                remoteActive && remoteStationId != null -> openStation(remoteStationId)
                 localActive -> local.station?.let { openStation(it.id) }
+                remoteActive && remoteStationId != null -> openStation(remoteStationId)
                 else -> Unit
             }
         }),
@@ -374,29 +380,7 @@ internal fun LiveMiniPlayer(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .55f)),
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (remoteActive) {
-                StationLogoOrPlaceholder(remoteTitle, remoteStation, Modifier.size(40.dp))
-                Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                    Text(remoteTitle ?: "Станция", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                    remote.trackTitle?.let { title ->
-                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
-                    }
-                    val percent = remote.volumePercent
-                    Text(
-                        listOfNotNull(remoteTargetName, percent?.let { "$it%" }).joinToString(" · "),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                IconButton(
-                    onClick = { remoteStationId?.let(remotePlay) },
-                    enabled = remoteStationId != null,
-                    modifier = Modifier.size(38.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
-                ) { Icon(Icons.Default.PlayArrow, "Играть", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(22.dp)) }
-                IconButton(onClick = remoteStop, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Stop, "Остановить", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
-            } else {
+            if (localActive) {
                 val station = local.station ?: return@Row
                 StationLogo(station, Modifier.size(40.dp))
                 Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
@@ -413,6 +397,28 @@ internal fun LiveMiniPlayer(
                     Icon(if (local.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (local.isPlaying) "Пауза" else "Играть", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(22.dp))
                 }
                 IconButton(onClick = localStop, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Stop, "Остановить", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+            } else if (remoteActive) {
+                StationLogoOrPlaceholder(remoteTitle, remoteStation, Modifier.size(40.dp))
+                Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                    Text(remoteTitle ?: "Станция", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                    remote?.trackTitle?.let { title ->
+                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+                    }
+                    val percent = remote?.volumePercent
+                    Text(
+                        listOfNotNull(remoteTargetName, percent?.let { "$it%" }).joinToString(" · "),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(
+                    onClick = { remoteStationId?.let(remotePlay) },
+                    enabled = remoteStationId != null,
+                    modifier = Modifier.size(38.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                ) { Icon(Icons.Default.PlayArrow, "Играть", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(22.dp)) }
+                IconButton(onClick = remoteStop, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Stop, "Остановить", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
             }
             Icon(Icons.Default.ChevronRight, "Открыть экран станции", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
         }
@@ -432,9 +438,11 @@ private fun StationLogoOrPlaceholder(title: String?, station: Station?, modifier
 private fun StationRow(
     station: Station,
     current: Boolean,
+    isPlaying: Boolean,
     index: Int,
     favourite: Boolean,
     play: () -> Unit,
+    pause: () -> Unit,
     openStation: () -> Unit,
     toggleFavourite: () -> Unit,
 ) {
@@ -443,16 +451,42 @@ private fun StationRow(
         index % 2 == 1 -> MaterialTheme.colorScheme.background.copy(alpha = .32f)
         else -> MaterialTheme.colorScheme.surface
     }
-    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(rowColor).clickable(onClick = play).padding(vertical = 7.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    val activeAndPlaying = current && isPlaying
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .background(rowColor)
+            .clickable(onClick = if (activeAndPlaying) pause else play)
+            .padding(vertical = 7.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         StationLogo(station, Modifier.size(38.dp))
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1.5f)) {
-            Text(if (current) "▶ ${station.name}" else station.name, color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium, fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val titlePrefix = if (current) (if (isPlaying) "⏸ " else "▶ ") else ""
+            Text(
+                "$titlePrefix${station.name}",
+                color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             station.country?.let { Text(it, color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall) }
         }
         Text(station.tags.joinToString(", "), color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 5.dp))
         Text(listOfNotNull(station.bitrateKbps?.let { "$it k" }, station.codec).joinToString(" / ").ifBlank { "—" }, color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(.75f))
-        IconButton(onClick = play, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.PlayArrow, "Включить станцию ${station.name}", tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary) }
+        IconButton(
+            onClick = if (activeAndPlaying) pause else play,
+            modifier = Modifier.size(36.dp),
+        ) {
+            Icon(
+                if (activeAndPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                if (activeAndPlaying) "Приостановить станцию ${station.name}" else "Включить станцию ${station.name}",
+                tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+            )
+        }
         IconButton(onClick = openStation, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.ChevronRight, "Открыть станцию ${station.name}", tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant) }
         IconButton(onClick = toggleFavourite, modifier = Modifier.size(36.dp)) { Text(if (favourite) "★" else "☆", color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium) }
     }

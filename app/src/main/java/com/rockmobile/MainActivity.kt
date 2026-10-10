@@ -292,7 +292,19 @@ class MainActivity : ComponentActivity() {
                     displayCatalogue.singleOrNull { it.id == stationPlayerStationId }?.let { personalData.toggleFavourite(it) }
                 },
                 phoneOutput = phoneOutput,
-                selectPhoneOutput = { phoneOutputOverride = true; pendingLocalTransfer = null },
+                selectPhoneOutput = {
+                    phoneOutputOverride = true
+                    targetDirectory.clearSelection()
+                    pendingLocalTransfer = null
+                    val wasRemotePlaying = selectedPresentation?.status == LivePlaybackStatusUi.Playing ||
+                        selectedPresentation?.status == LivePlaybackStatusUi.Buffering ||
+                        miniRemote?.status == LivePlaybackStatusUi.Playing ||
+                        miniRemote?.status == LivePlaybackStatusUi.Buffering
+                    if (wasRemotePlaying) {
+                        liveStore.requestStop()
+                        playerStation?.let { playLocal(it, displayCatalogue) }
+                    }
+                },
                 selectTargetOutput = { targetId ->
                     phoneOutputOverride = false
                     targetDirectory.select(targetId)
@@ -320,9 +332,22 @@ class MainActivity : ComponentActivity() {
                 state = targetDirectoryState,
                 commands = targetCommands,
                 receivers = targetDirectory.receivers.collectAsStateWithLifecycle().value,
+                phoneOutput = phoneOutput,
                 back = { devicesScreen = false },
                 refresh = targetDirectory::refresh,
                 select = { targetId -> phoneOutputOverride = false; targetDirectory.select(targetId) },
+                selectPhone = {
+                    phoneOutputOverride = true
+                    targetDirectory.clearSelection()
+                    pendingLocalTransfer = null
+                    val wasRemotePlaying = miniRemote?.status == LivePlaybackStatusUi.Playing ||
+                        miniRemote?.status == LivePlaybackStatusUi.Buffering
+                    if (wasRemotePlaying) {
+                        liveStore.requestStop()
+                        val stationToPlay = resolvedRemoteStation ?: displayCatalogue.singleOrNull { it.id == remoteStationId }
+                        stationToPlay?.let { playLocal(it, displayCatalogue) }
+                    }
+                },
                 dispatch = targetDirectory::dispatch,
                 openAccount = { account.ensureSessionVisible(); accountOpen = true },
             )
@@ -330,6 +355,7 @@ class MainActivity : ComponentActivity() {
                 state = state,
                 playback = playbackState,
                 voice = voiceState,
+                phoneOutput = phoneOutput,
                 retry = model::retryRockserver,
                 updateFilters = model::updateFilters,
                 onSearch = model::submitSearch,

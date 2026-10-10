@@ -23,6 +23,7 @@ class TargetDirectoryViewModel internal constructor(
         sessionProvider()?.let { repository.start(viewModelScope, it) } ?: repository.stop()
     }
     fun select(targetId: String) = repository.select(targetId)
+    fun clearSelection() = repository.clearSelection()
     fun dispatch(command: RemoteCommand) = repository.dispatch(command, Instant.now())
     override fun onCleared() { repository.stop() }
 }

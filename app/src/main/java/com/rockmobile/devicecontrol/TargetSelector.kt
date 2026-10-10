@@ -17,7 +17,13 @@ import androidx.compose.ui.unit.dp
 
 /** Selector only establishes an explicit future target; it does not expose or send commands. */
 @Composable
-fun TargetSelector(state: TargetDirectoryState, refresh: () -> Unit, select: (String) -> Unit) {
+fun TargetSelector(
+    state: TargetDirectoryState,
+    refresh: () -> Unit,
+    select: (String) -> Unit,
+    selectPhone: (() -> Unit)? = null,
+    phoneOutput: Boolean = false,
+) {
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Text("Устройство управления", style = MaterialTheme.typography.titleMedium)
         when (state) {
@@ -32,14 +38,27 @@ fun TargetSelector(state: TargetDirectoryState, refresh: () -> Unit, select: (St
             }
             is TargetDirectoryState.Available -> {
                 state.notice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (selectPhone != null) {
+                    val phoneSelected = phoneOutput || state.selectedTargetId == null
+                    OutlinedButton(
+                        onClick = selectPhone,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                    ) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(if (phoneSelected) "✓ Этот телефон" else "Этот телефон")
+                            Text("Мобильное воспроизведение", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
                 if (state.targets.isEmpty()) Text("Нет разрешённых устройств для управления.")
                 state.targets.forEach { target ->
-                    val selected = state.selectedTargetId == target.id
+                    val selected = !phoneOutput && state.selectedTargetId == target.id
                     OutlinedButton(
                         onClick = { select(target.id) },
                         enabled = target.usable,
                         modifier = Modifier.fillMaxWidth().semantics { stateDescription = targetStatus(target) },
                     ) {
+
                         Column(Modifier.fillMaxWidth()) {
                             Text(if (selected) "✓ ${target.name}" else target.name)
                             Text("${target.type} · ${target.roles.joinToString { it.name }} · ${targetStatus(target)}", style = MaterialTheme.typography.bodySmall)

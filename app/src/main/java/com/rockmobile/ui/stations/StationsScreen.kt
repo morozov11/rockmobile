@@ -39,6 +39,7 @@ fun StationsScreen(
     state: StationsUiState,
     playback: PlaybackState,
     voice: VoiceUiState,
+    phoneOutput: Boolean = false,
     retry: () -> Unit,
     updateFilters: ((StationFilters) -> StationFilters) -> Unit,
     onSearch: () -> Unit,
@@ -67,9 +68,9 @@ fun StationsScreen(
     var favouritesOpen by rememberSaveable { mutableStateOf(false) }
     var historyOpen by rememberSaveable { mutableStateOf(false) }
     val remotePlayingId = liveRemote
-        ?.takeIf { it.status == LivePlaybackStatusUi.Playing || it.status == LivePlaybackStatusUi.Buffering }
+        ?.takeIf { !phoneOutput && (it.status == LivePlaybackStatusUi.Playing || it.status == LivePlaybackStatusUi.Buffering) }
         ?.confirmedStationId
-    val currentStationId = remotePlayingId ?: playback.station?.id
+    val currentStationId = if (phoneOutput) playback.station?.id else (remotePlayingId ?: playback.station?.id)
 
     Surface(color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
@@ -106,13 +107,27 @@ fun StationsScreen(
                             remoteStop = remoteStop,
                             localToggle = toggle,
                             localStop = localStop,
+                            phoneOutput = phoneOutput,
                         )
                         Spacer(Modifier.height(6.dp))
+                        val isPlaying = if (phoneOutput) {
+                            playback.isPlaying && playback.station?.id == currentStationId
+                        } else {
+                            liveRemote?.let {
+                                (it.status == LivePlaybackStatusUi.Playing || it.status == LivePlaybackStatusUi.Buffering) &&
+                                    it.confirmedStationId == currentStationId
+                            } == true
+                        }
+                        val pauseActive: () -> Unit = {
+                            if (phoneOutput) toggle() else remoteStop()
+                        }
                         StationTable(
                             modifier = Modifier.weight(1f),
                             stations = state.stations,
                             currentStationId = currentStationId,
+                            isPlaying = isPlaying,
                             play = { station -> play(station, state.stations) },
+                            pause = pauseActive,
                             openStation = { station -> openStation(station.id) },
                             favourites = personal.favourites.map { it.stationId }.toSet(),
                             toggleFavourite = toggleFavourite,

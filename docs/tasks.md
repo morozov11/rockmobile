@@ -1,5 +1,19 @@
 # RockMobile task log
 
+## Return to phone output and station catalog play/pause toggle (2026-10-10)
+
+- Goal: allow the user to easily switch back to local mobile playback after selecting an external output device (RockCast), and toggle playback icon to Pause (⏸) for the actively playing station in the catalogue rows.
+- Scope:
+  - Add `TargetDirectoryRepository.clearSelection()` and wire through `TargetDirectoryViewModel`.
+  - Expose phone output choice («Этот телефон · Мобильное воспроизведение») in `DeviceHubScreen`, `TargetSelector`, and `OutputSelectorDialog`.
+  - Wire phone output selection in `MainActivity`: clears target selection, stops remote playback if active, and resumes/starts local playback on the phone.
+  - Fix output dialog checkmark so it only highlights remote targets when phone output is not active.
+  - Update `StationRow` and `StationTable` to accept `isPlaying` and `pause` callback. Display `Icons.Default.Pause` (⏸) when `current && isPlaying`, triggering pause on tap. Display `Icons.Default.PlayArrow` (▶) otherwise, triggering play on tap.
+  - Wire `isPlaying` and `pauseActive` in `StationsScreen` handling both local phone playback and remote RockCast playback states.
+  - Add unit test `clearSelection_clearsPersistedSelectionAndUpdatesState` in `TargetDirectoryRepositoryTest`.
+- Checks: `:app:testDebugUnitTest` (187 unit tests passed), `:app:lintDebug`, `:app:assembleDebug`, `git diff --check`.
+- Status: implemented and verified.
+
 ## RM-012-C — 2026-09-28 — live acceptance fixes: quarantine removal port
 
 - Goal: close the two-device acceptance defects reported live — the phone's favourites list

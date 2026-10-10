@@ -1,5 +1,23 @@
 # RockMobile status
 
+## Return to phone output and station catalog play/pause toggle (2026-10-10)
+
+Fixed switching back to mobile playback after selecting an external output device, and added dynamic play/pause icon toggling for the active station in the catalogue.
+
+1. **Mobile output switching**:
+   - Added `clearSelection()` to `TargetDirectoryRepository` / `TargetDirectoryViewModel`, which clears persisted selection in preferences and resets `selectedTargetId` to null.
+   - Added explicit «Этот телефон · Мобильное воспроизведение» option to the device management hub (`DeviceHubScreen` / `PhoneDeviceCard`), `TargetSelector`, and the playback output chooser dialog (`OutputSelectorDialog`).
+   - Selecting phone output stops remote playback if active, clears remote selection, and immediately routes station playback to the local media player.
+   - The output checkmark (`✓`) in the dialog only highlights remote targets when phone output is not active.
+
+2. **Catalog row play/pause state**:
+   - `StationRow` and `StationTable` now receive `isPlaying: Boolean` and `pause: () -> Unit`.
+   - When a station is active and playing (`current && isPlaying`), the row and action button display `Icons.Default.Pause` (⏸) instead of `Icons.Default.PlayArrow` (▶), and the accessibility label changes to «Приостановить станцию».
+   - Tapping the row or pause button pauses local playback or issues a remote stop.
+   - When paused or inactive, the row displays `▶` and tapping resumes/starts playback.
+
+Verified with `:app:testDebugUnitTest` (187 unit tests passed, including `clearSelection` persistence test), `:app:lintDebug`, `:app:assembleDebug`, and `git diff --check`.
+
 ## RM-012-C — live two-device acceptance round (2026-09-28 evening)
 
 The first real RockMobile↔RockCast sync run exposed the RM-007-A quarantine as the single root
