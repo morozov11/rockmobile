@@ -1,6 +1,16 @@
 # Rockmobile
 
-Android-клиент интернет-радио для RockCast. Стартовый экран использует тот же локальный каталог, что и RockCast, а Rockserver подключается для явного текстового и голосового поиска.
+Android-клиент интернет-радио для [RockCast](https://github.com/morozov11/rockcast). Стартовый экран использует тот же локальный каталог, что и RockCast, а [RockServer](https://github.com/morozov11/rockserver) ([rockplatform.win](https://rockplatform.win)) подключается для явного текстового и голосового поиска.
+
+## Экосистема RockCast
+
+RockMobile является частью открытой экосистемы интернет-радио RockCast:
+
+- **[RockMobile](https://github.com/morozov11/rockmobile)** *(этот репозиторий)* — Android-приложение интернет-радио, фоновое воспроизведение Media3, голосовой поиск и пульт управления.
+- **[RockCast](https://github.com/morozov11/rockcast)** — десктопный плеер интернет-радио для Windows и Linux с поддержкой Google Cast (CASTV2) и спектральным анализатором.
+- **[RockServer](https://github.com/morozov11/rockserver)** — Rust-сервер каталога, семантического ИИ-поиска, потокового голосового ввода и синхронизации устройств ([rockplatform.win](https://rockplatform.win)).
+- **[rock-esp32](https://github.com/morozov11/rock-esp32)** — прошивка автономного аппаратного радиоплеера на базе ESP32-P4.
+- **[RockCast Station Catalog](https://github.com/morozov11/rockcast-station-catalog)** — канонический курируемый каталог радиостанций и инструменты валидации схем.
 
 ## Возможности
 
@@ -19,7 +29,7 @@ Android-клиент интернет-радио для RockCast. Стартов
 
 - Android 8.0 (API 26) или новее.
 - Android SDK с `compileSdk 36` для сборки.
-- Для server-каталога и голосового поиска — сеть до официального Rockserver `https://rockplatform.win`.
+- Для server-каталога и голосового поиска — сеть до официального [RockServer](https://github.com/morozov11/rockserver) ([rockplatform.win](https://rockplatform.win)).
 
 ## Быстрый старт для разработки
 
@@ -51,7 +61,7 @@ APK: `app/build/outputs/apk/debug/`.
 
 ## Rockserver
 
-Официальные сборки используют публичный RockServer `https://rockplatform.win` без пользовательской настройки URL/токена. Публичные операции `/v1/*` вызываются без Bearer; legacy LAN-дефолты и bootstrap-токен сбрасываются при загрузке настроек.
+Официальные сборки используют публичный [RockServer](https://github.com/morozov11/rockserver) ([rockplatform.win](https://rockplatform.win)) без пользовательской настройки URL/токена. Публичные операции `/v1/*` вызываются без Bearer; legacy LAN-дефолты и bootstrap-токен сбрасываются при загрузке настроек.
 
 | Назначение | Контракт |
 | --- | --- |
@@ -68,7 +78,7 @@ Voice-сессия: `start` → `ready` → PCM-чанки ≤32 KiB → `commit
 
 [`app/src/main/assets/stations.v1.json`](app/src/main/assets/stations.v1.json) — bundled schema-v1 snapshot общего каталога. Приложение принимает только pinned release `2026.08.2` с SHA-256 `3fa20dca94fc059bd433a47b9fba9bb6d5e5e1aa2957a5ffb58b2a7b20b1d74d`; ID станции и primary stream берутся из JSON, а не вычисляются из URL.
 
-Единственный authoring source baseline — `C:\repos\rockcast-station-catalog`. Обновление делается только офлайн-командой `release_sync.py sync rockmobile` с последующим `verify`, а не ручным копированием. Стартовый экран всегда использует тот же pinned baseline, что и RockCast. При доступном сервере приложение в фоне получает полный набор вариантов через постраничный public catalog, а текст и выбранные фильтры отправляет в `POST /v1/search`; при недоступном сервере радио продолжает работать, а для локального поиска используется проверенный extended SQLite `2026.08.2-mobile.1` (SHA-256 `ad469d405f177d7e476cf9b3d9985497d0e2c6132ac0f3ce14485f4eab402073`) с откатом к pinned baseline.
+Единственный authoring source baseline — [RockCast Station Catalog](https://github.com/morozov11/rockcast-station-catalog). Обновление делается только офлайн-командой `release_sync.py sync rockmobile` с последующим `verify`, а не ручным копированием. Стартовый экран всегда использует тот же pinned baseline, что и RockCast. При доступном сервере приложение в фоне получает полный набор вариантов через постраничный public catalog, а текст и выбранные фильтры отправляет в `POST /v1/search`; при недоступном сервере радио продолжает работать, а для локального поиска используется проверенный extended SQLite `2026.08.2-mobile.1` (SHA-256 `ad469d405f177d7e476cf9b3d9985497d0e2c6132ac0f3ce14485f4eab402073`) с откатом к pinned baseline.
 
 `stations.txt` сохранён только как исторический вход для проверяемой миграции и больше не читается приложением. При загрузке snapshot старые URL-derived значения из `rockmobile:…` сопоставляются с одобренными canonical ID для сохранённого списка недоступных voice-станций; неизвестные значения остаются нетронутыми на переходный релиз.
 
@@ -101,4 +111,4 @@ rockmobile/
 
 ## Лицензия
 
-Лицензия для Rockmobile ещё не определена.
+RockMobile распространяется под лицензией [Apache License, Version 2.0](LICENSE).
