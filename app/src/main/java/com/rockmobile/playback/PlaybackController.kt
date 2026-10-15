@@ -11,9 +11,14 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.rockmobile.domain.model.Station
 import com.rockmobile.settings.UnavailableVoiceStationStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 data class PlaybackState(
     val station: Station? = null,
@@ -37,16 +42,27 @@ class PlaybackController(
     ).buildAsync()
     private var controller: MediaController? = null
     private var queue: List<Station> = emptyList()
+    /** Catalogue-station view used to restore the current station after an activity restart. */
+    private var knownStations: List<Station> = emptyList()
     private var pendingPlay: PendingPlay? = null
     private var volumeBeforeVoiceCapture: Float? = null
     private var awaitingVoiceStationStart = false
     /** Desired state while the asynchronous MediaController connection is still pending. */
     private var pendingShouldPlay = true
+    /** ICY titles arrive as service-side timed metadata, not through the merged controller metadata. */
+    private val icyScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     init {
         future.addListener({
             controller = future.get().also { it.addListener(this); pendingPlay?.let { play(it.station, it.stations, it.fromVoiceResult) }; publish() }
         }, ContextCompat.getMainExecutor(context))
+        icyScope.launch {
+            LiveIcyTitles.latest.collect { entry ->
+                if (entry != null && entry.mediaId == _state.value.station?.id) {
+                    _state.value = _state.value.copy(streamTitle = entry.title)
+                }
+            }
+        }
     }
 
     fun play(station: Station, stations: List<Station> = listOf(station), fromVoiceResult: Boolean = false) {
@@ -102,6 +118,11 @@ class PlaybackController(
         _state.value = _state.value.copy(error = null)
         controller?.apply { prepare(); play() }
     }
+    /** Lets publish() resolve the playing station from the catalogue after an activity restart. */
+    fun adoptStations(stations: List<Station>) {
+        knownStations = stations
+        if (_state.value.station == null) publish()
+    }
     override fun onIsPlayingChanged(isPlaying: Boolean) = publish()
     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
         // Keep a stable, actionable state even if Media3 clears playerError during its reset.
@@ -113,9 +134,25 @@ class PlaybackController(
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = publish()
     private fun mediaItem(station: Station) = MediaItem.Builder().setUri(station.streamUrl).setMediaId(station.id)
         .setMediaMetadata(MediaMetadata.Builder().setTitle(station.name).setArtworkUri(station.faviconUrl?.let(android.net.Uri::parse)).build()).build()
+
+    /**
+     * After the system recreates the activity while the service keeps playing, queue and
+     * catalogue are empty and a controller-side MediaItem carries no stream URI; the id,
+     * title and artwork are still enough for a display-only station so the mini-player and
+     * transport controls return.
+     */
+    private fun stationFromMediaItem(item: MediaItem): Station = Station(
+        id = item.mediaId,
+        name = item.mediaMetadata.title?.toString()?.takeIf { it.isNotBlank() } ?: item.mediaId,
+        streamUrl = item.requestMetadata?.mediaUri?.toString() ?: "",
+        faviconUrl = item.mediaMetadata.artworkUri?.toString(),
+    )
     private fun publish() { controller?.let { active ->
         val item = active.currentMediaItem
-        val current = queue.firstOrNull { it.id == item?.mediaId } ?: _state.value.station
+        val current = queue.firstOrNull { it.id == item?.mediaId }
+            ?: item?.let { knownStations.firstOrNull { it.id == item.mediaId } }
+            ?: item?.let(::stationFromMediaItem)
+            ?: _state.value.station
         val metadata = active.mediaMetadata
         val title = metadata.title?.toString()?.takeIf { it.isNotBlank() && it != current?.name }
         if (active.isPlaying && awaitingVoiceStationStart && current != null) {
@@ -126,13 +163,13 @@ class PlaybackController(
             station = current,
             isPlaying = active.isPlaying,
             error = active.playerError?.let { "Couldn't connect to this station" } ?: _state.value.error,
-            streamTitle = title,
+            streamTitle = title ?: LiveIcyTitles.latest.value?.takeIf { it.mediaId == current?.id }?.title,
             streamArtist = metadata.artist?.toString()?.takeIf { it.isNotBlank() },
             canSkipPrevious = active.hasPreviousMediaItem(),
             canSkipNext = active.hasNextMediaItem(),
         )
     } }
-    fun release() { endVoiceCapture(); controller?.removeListener(this); MediaController.releaseFuture(future) }
+    fun release() { icyScope.cancel(); endVoiceCapture(); controller?.removeListener(this); MediaController.releaseFuture(future) }
 
     private data class PendingPlay(val station: Station, val stations: List<Station>, val fromVoiceResult: Boolean)
 }

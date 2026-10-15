@@ -1,5 +1,51 @@
 # RockMobile task log
 
+## Local ICY track metadata and station restore after activity restart (2026-10-15)
+
+- Goal: show the current track for phone playback (user report: metadata never appears), and
+  restore the playing station with stop/pause controls when the app is reopened from the media
+  notification after Android destroyed the activity.
+- Scope:
+  - `RockmobileMediaSessionService`: `Player.Listener.onMetadata` extracts `IcyInfo.title` and
+    publishes it to the new process-wide `LiveIcyTitles` bus; explicit `setSessionActivity`
+    PendingIntent routes notification taps to `MainActivity`.
+  - `PlaybackController`: collects `LiveIcyTitles` and applies the entry of the current station
+    into `streamTitle`; `adoptStations()` lets `publish()` restore the current station from the
+    catalogue after an activity restart, with a display-only fallback built from the
+    controller-side `MediaItem` (its `localConfiguration` URI does not cross the session
+    boundary).
+  - `StationPlayerScreen`: bright track line under the local on-air indicator.
+  - `app/build.gradle.kts`: explicit `media3-extractor` dependency for `IcyInfo`.
+- Result: mini-player and station screen show the ICY StreamTitle on phone output while the
+  notification keeps the station name; after activity recreation (verified via screen rotation
+  with the service still playing) the mini-player, pause and stop controls return immediately.
+- Checks: `:app:compileDebugKotlin`, `:app:testDebugUnitTest` (189 tests, 0 failed),
+  `:app:lintDebug` (0 errors after `@OptIn(UnstableApi::class)` on the service), live device
+  verification (file trace + uiautomator dumps) on the connected phone.
+- Status: implemented and verified on device.
+
+## Station catalogue row redesign — Variant A (2026-10-15)
+
+- Goal: make station names and genres readable in the catalogue list; the old three-column row
+  left ~74dp for the name and ~40dp for tags on a 360dp screen while the country code stayed
+  fully visible.
+- Scope:
+  - Rebuild `StationRow` in `ui/stations/StationComponents.kt`: name with `weight(1f)` on one
+    line, up to three tag chips + «+N» on the second line, quiet `country · bitrate · codec`
+    suffix, single round 44dp Play/Pause button, favourite as a logo-corner badge, long press
+    opens the station screen.
+  - Active playing station: `primaryContainer` highlight with `onPrimaryContainer` content,
+    animated equalizer beside the name, bright Pause button; zebra striping and the `⏸ `/`▶ `
+    name prefix removed.
+  - Add `StationTagChip` and `StationEqualizer` composables; thread `selectGenre` from
+    `StationsScreen` through `StationTable` so a chip tap sets the genre filter.
+  - New design mockup kept in `docs/mockups/station-list-redesign.html`.
+- Result: names get ~210dp (previously ~74dp), genres are visible and double as one-tap genre
+  filters, country/bitrate/codec are de-emphasized to a single suffix. Diagnosed (not yet fixed)
+  local ICY track-metadata limitation documented in `docs/playback.md`.
+- Checks: `:app:compileDebugKotlin`, `:app:testDebugUnitTest` (189 tests, 0 failed).
+- Status: implemented; visual acceptance on a physical device pending.
+
 ## Return to phone output and station catalog play/pause toggle (2026-10-10)
 
 - Goal: allow the user to easily switch back to local mobile playback after selecting an external output device (RockCast), and toggle playback icon to Pause (⏸) for the actively playing station in the catalogue rows.

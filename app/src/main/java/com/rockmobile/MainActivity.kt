@@ -164,6 +164,12 @@ class MainActivity : ComponentActivity() {
             }
             val displayCatalogue = (catalogue + personalStations.values + listOfNotNull(resolvedRemoteStation)).distinctBy { it.id }
 
+            // A restarted activity reconnects to a still-playing session with an empty queue;
+            // the catalogue lets the controller restore the current station and controls.
+            androidx.compose.runtime.LaunchedEffect(displayCatalogue) {
+                playback.adoptStations(displayCatalogue)
+            }
+
             androidx.compose.runtime.LaunchedEffect(liveState.overrideNotice) {
                 val notice = liveState.overrideNotice ?: return@LaunchedEffect
                 val targetName = availableDirectory?.targets?.singleOrNull { it.id == notice.targetId }?.name

@@ -1,5 +1,61 @@
 # RockMobile status
 
+## Local ICY track metadata and station restore after activity restart (2026-10-15)
+
+Two fixes verified live on the connected phone (file/UI-dump based evidence — this OEM suppresses
+app logcat):
+
+1. **Local track metadata (ICY)**. Root cause confirmed on device: ExoPlayer merges metadata so a
+   non-null `MediaItem.title` (the station name) overwrites the ICY `StreamTitle`, and
+   `MediaController` does not forward `onMetadata` at all. Fix: the service-side player listener
+   reads `IcyInfo` from timed metadata and publishes it to the process-wide `LiveIcyTitles` bus;
+   `PlaybackController` applies the entry matching the current station into
+   `PlaybackState.streamTitle`; `MediaItem.title` deliberately stays the station name so the
+   notification/lock screen keep showing it. The station screen gained a track line under the
+   on-air indicator, and the mini-player now shows the track instead of «Этот телефон»
+   (verified: «Motley Crue — Girls, Girls, Girls» on Big R Radio - 80s Metal FM). ICY only
+   updates when the stream sends a new StreamTitle, so talk segments can leave it stale/empty.
+2. **Station restore after activity recreation**. User report: reopen from the media notification
+   while the service kept playing showed no station and offered no way to stop. Causes: the fresh
+   `PlaybackController` has an empty queue, and a controller-side `MediaItem` carries no stream
+   URI. Fix: `publish()` resolves the current station from `adoptStations(displayCatalogue)`
+   (fed by `MainActivity`), falling back to a display-only station built from the `MediaItem`
+   id/title/artwork; the session now sets an explicit `sessionActivity` PendingIntent to
+   `MainActivity`. Verified by screen rotation (activity destroyed, service playing): the
+   mini-player, «Пауза» and «Остановить» all returned.
+
+Verified with `:app:compileDebugKotlin`, `:app:testDebugUnitTest` (189 tests, 0 failed),
+`:app:lintDebug` (green after `@OptIn(UnstableApi)` on the service for `IcyInfo`), and
+`:app:assembleDebug` installed on the phone.
+
+## Station catalogue row redesign — Variant A (2026-10-15)
+
+The catalogue row was rebuilt around readability (mockup: [`docs/mockups/station-list-redesign.html`](mockups/station-list-redesign.html)).
+Previously the name, tags and bitrate shared ~160dp with three 36dp icon buttons, so on a 360dp
+screen the name got ~74dp, tags were ellipsized to nothing, while the two-letter country code
+stayed visible. The new `StationRow`:
+
+- The station name owns the full remaining width (~210dp, `bodyLarge`); tags moved to a second
+  line as pill chips (up to three + «+N»), and a chip tap applies that genre filter through
+  `StationTable.selectGenre` → `updateFilters` (genre matching is already case-insensitive).
+- Country, bitrate and codec collapsed into one quiet suffix `US · 128k · MP3` at the end of the
+  chip line; the zebra striping is gone, rows are separated by a divider.
+- One round 44dp Play/Pause button remains on the right (row tap still toggles playback);
+  the chevron was removed — a long press on the row opens the station screen, and the favourite
+  star is a 30dp badge on the logo corner.
+- The active playing station is highlighted with `primaryContainer` (#733314) and
+  `onPrimaryContainer` text instead of solid `primary`, and shows an animated three-bar equalizer
+  next to its name; its pause button uses the bright `secondary` accent.
+
+During the investigation the local track-metadata defect was root-caused (documented in
+[playback.md](playback.md)): Media3 delivers ICY `StreamTitle` into `MediaMetadata.title`, but the
+app-set `MediaItem.title = station.name` overwrites it in ExoPlayer's metadata merge, so
+`PlaybackState.streamTitle` is always null on phone output, and the station screen has no track
+line at all in the local branch. The fix is planned, not implemented in this change.
+
+Verified with `:app:compileDebugKotlin` and `:app:testDebugUnitTest` (189 tests, 0 failed;
+the Compose row itself is covered by compilation only — no UI unit tests exist).
+
 ## Return to phone output and station catalog play/pause toggle (2026-10-10)
 
 Fixed switching back to mobile playback after selecting an external output device, and added dynamic play/pause icon toggling for the active station in the catalogue.

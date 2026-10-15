@@ -9,6 +9,7 @@
 | [playback.md](playback.md) | Media3, MediaSession, удалённый RockCast, метаданные и ошибки потока |
 | [voice.md](voice.md) | Запись, VAD, WebSocket Rockserver и маршрут результата на выбранное устройство |
 | [RM-001.md](RM-001.md) | Фактический результат RM-001 — RM-003 |
+| [mockups/](mockups/) | HTML-мокапы предложений по дизайну (например, редизайн строки каталога) |
 
 ## Инварианты
 

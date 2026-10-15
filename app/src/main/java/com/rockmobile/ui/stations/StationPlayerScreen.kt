@@ -158,6 +158,19 @@ fun StationPlayerScreen(
                         )
                         if (phoneOutput) {
                             LocalOnAirIndicator(localPlayback, stationId)
+                            localPlayback.streamTitle
+                                ?.takeIf { localPlayback.station?.id == stationId }
+                                ?.let { track ->
+                                    Text(
+                                        track,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(horizontal = 8.dp),
+                                    )
+                                }
                             val isPlayingCurrentStation = localPlayback.isPlaying && localPlayback.station?.id == station?.id
                             LocalTransport(
                                 canSkipPrevious = previousStation != null || localPlayback.canSkipPrevious,

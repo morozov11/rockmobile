@@ -13,6 +13,8 @@
 | `personalsync/PersonalSyncEngine.kt` | Один push+pull цикл: батчи с прошивкой курсора, один 401-renew-повтор на запрос, backoff |
 | `personalsync/PersonalSyncCoordinator.kt` | Event-driven триггеры (старт, дебаунс ~10 с, pull ~5 мин, foreground), статус для аккаунт-экрана, безопасный лог фаз/счётчиков |
 | `account/NativeSessionManager.kt` | Переиспользуемый refresh native device-session (access-токен ротируется, device-secret нет) |
+| `account/AccessTokenPolicy.kt` | Правила ротации access-токена и границы его времени жизни |
+| `account/PairingQr.kt`, `account/PairingLog.kt`, `account/SessionLog.kt` | Fragment-based pairing URL, безопасный журнал pairing-фаз и session-событий (без секретов) |
 | `data/stations/StationSources.kt` | Rockserver и bundled RockCast источники |
 | `data/stations/ExtendedCatalogStationSource.kt` | Room-backed расширенный каталог + Room-free `stationsById` (имена/потоки станций вне загруженного каталога для персональных списков) |
 | `data/stations/StationIconLoader.kt` | Bounded fetch/decode/cache иконок станций |
@@ -25,18 +27,23 @@
 | `account/AccountViewModel.kt` | Pairing lifecycle, refresh/logout/revoke и безопасный fallback |
 | `account/AccountScreen.kt` | Читаемый экран подключения телефона, QR/deep link и список устройств |
 | `devicecontrol/DirectoryDtos.kt` | Строгие REST/WebSocket directory DTOs и safe unknown variants |
+| `devicecontrol/DirectoryModels.kt` | Доменные модели directory: targets, presence/freshness, capabilities |
 | `devicecontrol/CommandModels.kt` | Строгие device-target command DTOs, lifecycle и ephemeral Chromecast receiver models |
 | `devicecontrol/DirectoryApi.kt` | Authenticated typed directory REST boundary |
 | `devicecontrol/DirectorySocket.kt` | Bounded native-session controller lifecycle, directory subscription and typed command frames |
 | `devicecontrol/TargetDirectoryRepository.kt` | Owner-scoped revision/lifecycle store, explicit selection and command authorization invariant |
+| `devicecontrol/LivePlaybackStore.kt`, `devicecontrol/LivePlaybackReducer.kt` | Shared live-playback presentation state fed by `runtime_state` + command lifecycle (подтверждённое состояние отдельно от pending intent, drag-изоляция громкости) |
 | `devicecontrol/TargetDirectoryViewModel.kt`, `TargetSelector.kt`, `CapabilityControls.kt` | Lifecycle bridge, explicit selector and capability-derived remote-player Compose controls |
+| `devicecontrol/DeviceControlScreen.kt` | Экран «Устройства»: hub управления выводом, включая «Этот телефон · Мобильное воспроизведение» |
 | `settings/UnavailableVoiceStationStore.kt` | Локальная память voice-станций с недоступным потоком |
+| `settings/LegacyStationIdMigration.kt` | Сопоставление старых URL-derived ID `rockmobile:…` с canonical ID каталога |
 | `ui/stations/StationsViewModel.kt` | Каталог, фильтры и voice-кандидаты |
 | `ui/stations/StationsScreen.kt` | Compose orchestration каталога и playback entry point |
-| `ui/stations/StationComponents.kt` | Каталоговые Compose-компоненты, фильтры, таблица и artwork |
-| `ui/stations/PlayerScreen.kt` | Отдельный экран текущего проигрывания |
-| `playback/PlaybackController.kt` | Очередь, MediaController и ошибки потока |
-| `playback/RockmobileMediaSessionService.kt` | Владелец ExoPlayer и MediaSession |
+| `ui/stations/StationComponents.kt` | Каталоговые Compose-компоненты: строка каталога (вариант A — имя на всю ширину, теги-чипсы с фильтром по тапу, бейдж избранного на логотипе, эквалайзер играющей станции), фильтры, мини-плеер и artwork |
+| `ui/stations/StationPlayerScreen.kt` | Экран станции: hero-карточка, селектор вывода, live-индикатор, transport и карточка громкости |
+| `ui/stations/PersonalDialogs.kt` | Диалоги избранного и истории с разрешением станций из каталогов |
+| `playback/PlaybackController.kt` | Очередь, MediaController, ICY-треки из `LiveIcyTitles`, ошибки потока и восстановление станции после пересоздания Activity |
+| `playback/RockmobileMediaSessionService.kt` | Владелец ExoPlayer и MediaSession; публикует ICY StreamTitle в шину `LiveIcyTitles`, задаёт session activity для уведомления |
 | `voice/VoiceRecorder.kt` | `AudioRecord`, PCM и детектор конца речи |
 | `voice/RockserverVoiceClient.kt` | WebSocket и строгий parser событий |
 | `voice/VoiceCommandController.kt` | Voice state machine и безопасный playback |

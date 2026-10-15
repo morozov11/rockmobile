@@ -25,7 +25,7 @@ AccountScreen ── TargetDirectoryViewModel ── TargetDirectoryRepository
 
 `StationFilterOptions` хранит полный набор вариантов, полученный из серверного каталога, либо локальный набор при offline fallback. `StationsViewModel` отвечает за debounce, отмену устаревших запросов и возврат к baseline после очистки поиска. Voice-result заменяет видимый список ранжированными кандидатами Rockserver и сразу запускает выбранную станцию.
 
-`StationsScreen` теперь отвечает только за композицию экрана; каталоговые компоненты и `PlayerScreen` находятся отдельно в том же UI-пакете. Это уменьшает размер экранного файла, не превращая каждый небольшой composable в самостоятельный слой.
+`StationsScreen` теперь отвечает только за композицию экрана; каталоговые компоненты и `StationPlayerScreen` находятся отдельно в том же UI-пакете. Это уменьшает размер экранного файла, не превращая каждый небольшой composable в самостоятельный слой.
 
 ## Иконки станций (MVP)
 
@@ -71,7 +71,7 @@ is used as proof of remote playback.
 
 ## Воспроизведение
 
-`PlaybackController` — activity-scoped proxy к `MediaController`; он строит очередь и публикует `PlaybackState`. Единственный владелец ExoPlayer — `RockmobileMediaSessionService`, поэтому радио продолжает играть в фоне, а Media3 обслуживает notification, Bluetooth и lock screen.
+`PlaybackController` — activity-scoped proxy к `MediaController`; он строит очередь и публикует `PlaybackState`. Единственный владелец ExoPlayer — `RockmobileMediaSessionService`, поэтому радио продолжает играть в фоне, а Media3 обслуживает notification, Bluetooth и lock screen. Презентация удалённого воспроизведения не проходит через `PlaybackController`: её владелец — общий `LivePlaybackStore`/`LivePlaybackReducer`, питаемый directory-проекцией `runtime_state` и lifecycle команд, поэтому подтверждённое состояние никогда не выводится из факта нажатия или успеха команды.
 
 ## Голос и lifecycle
 
