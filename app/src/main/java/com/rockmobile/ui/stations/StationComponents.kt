@@ -9,9 +9,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +23,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,6 +34,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
@@ -67,6 +72,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -311,24 +317,25 @@ internal fun StationTable(
     openStation: (Station) -> Unit,
     favourites: Set<String>,
     toggleFavourite: (Station) -> Unit,
+    selectGenre: ((String) -> Unit)? = null,
 ) {
     Surface(modifier = modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .55f))) {
         if (stations.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No stations match these filters.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp)) {
-                itemsIndexed(stations, key = { _, station -> station.id }) { index, station ->
+                itemsIndexed(stations, key = { _, station -> station.id }) { _, station ->
                     val isCurrent = currentStationId == station.id
                     StationRow(
                         station = station,
                         current = isCurrent,
                         isPlaying = isCurrent && isPlaying,
-                        index = index,
                         favourite = station.id in favourites,
                         play = { play(station) },
                         pause = pause,
                         openStation = { openStation(station) },
                         toggleFavourite = { toggleFavourite(station) },
+                        onGenreClick = selectGenre,
                     )
                 }
             }
@@ -434,63 +441,144 @@ private fun StationLogoOrPlaceholder(title: String?, station: Station?, modifier
     }
 }
 
+/**
+ * Variant-A row: the station name owns the full remaining width, tags are chips on a second
+ * line, country/bitrate/codec collapse into one quiet suffix, and the only action is a round
+ * Play/Pause. Favourite lives as a badge on the logo corner; a long press opens station details.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StationRow(
     station: Station,
     current: Boolean,
     isPlaying: Boolean,
-    index: Int,
     favourite: Boolean,
     play: () -> Unit,
     pause: () -> Unit,
     openStation: () -> Unit,
     toggleFavourite: () -> Unit,
+    onGenreClick: ((String) -> Unit)? = null,
 ) {
-    val rowColor = when {
-        current -> MaterialTheme.colorScheme.primary
-        index % 2 == 1 -> MaterialTheme.colorScheme.background.copy(alpha = .32f)
-        else -> MaterialTheme.colorScheme.surface
-    }
     val activeAndPlaying = current && isPlaying
     Row(
         Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.small)
-            .background(rowColor)
-            .clickable(onClick = if (activeAndPlaying) pause else play)
-            .padding(vertical = 7.dp, horizontal = 4.dp),
+            .background(if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+            .combinedClickable(
+                onClick = if (activeAndPlaying) pause else play,
+                onLongClick = openStation,
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        StationLogo(station, Modifier.size(38.dp))
-        Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1.5f)) {
-            val titlePrefix = if (current) (if (isPlaying) "⏸ " else "▶ ") else ""
-            Text(
-                "$titlePrefix${station.name}",
-                color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            station.country?.let { Text(it, color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall) }
+        Box(Modifier.size(56.dp)) {
+            StationLogo(station, Modifier.size(48.dp).align(Alignment.Center))
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                    .clickable(onClick = toggleFavourite),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    if (favourite) "★" else "☆",
+                    color = if (favourite) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
         }
-        Text(station.tags.joinToString(", "), color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 5.dp))
-        Text(listOfNotNull(station.bitrateKbps?.let { "$it k" }, station.codec).joinToString(" / ").ifBlank { "—" }, color = if (current) MaterialTheme.colorScheme.onPrimary.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(.75f))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    station.name,
+                    color = if (current) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (current) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (activeAndPlaying) StationEqualizer(MaterialTheme.colorScheme.secondary)
+            }
+            Row(
+                Modifier.padding(top = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                station.tags.take(3).forEach { tag ->
+                    StationTagChip(tag, current = current, onClick = onGenreClick?.let { select -> { select(tag) } })
+                }
+                if (station.tags.size > 3) StationTagChip("+${station.tags.size - 3}", muted = true, current = current)
+                val meta = listOfNotNull(station.country, station.bitrateKbps?.let { "${it}k" }, station.codec?.uppercase()).joinToString(" · ")
+                if (meta.isNotEmpty()) {
+                    Text(
+                        meta,
+                        color = if (current) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .8f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.width(10.dp))
         IconButton(
             onClick = if (activeAndPlaying) pause else play,
-            modifier = Modifier.size(36.dp),
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(if (activeAndPlaying) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary),
         ) {
             Icon(
                 if (activeAndPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 if (activeAndPlaying) "Приостановить станцию ${station.name}" else "Включить станцию ${station.name}",
-                tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(24.dp),
             )
         }
-        IconButton(onClick = openStation, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.ChevronRight, "Открыть станцию ${station.name}", tint = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant) }
-        IconButton(onClick = toggleFavourite, modifier = Modifier.size(36.dp)) { Text(if (favourite) "★" else "☆", color = if (current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium) }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .45f))
+}
+
+/** Pill tag chip; a click applies the catalogue genre filter when a handler is provided. */
+@Composable
+private fun StationTagChip(label: String, muted: Boolean = false, current: Boolean = false, onClick: (() -> Unit)? = null) {
+    val shape = RoundedCornerShape(50)
+    val container = if (current) MaterialTheme.colorScheme.background.copy(alpha = .35f) else MaterialTheme.colorScheme.surfaceVariant
+    val border = if (current) BorderStroke(1.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .25f)) else BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    val content = when {
+        muted -> MaterialTheme.colorScheme.onSurfaceVariant
+        current -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.secondary
+    }
+    Surface(
+        modifier = if (onClick != null) Modifier.clip(shape).clickable(onClick = onClick) else Modifier,
+        shape = shape,
+        color = container,
+        border = border,
+    ) {
+        Text(label, color = content, style = MaterialTheme.typography.labelSmall, maxLines = 1, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+    }
+}
+
+/** Three-bar equalizer marking the row that is actually sounding right now. */
+@Composable
+private fun StationEqualizer(tint: Color) {
+    val transition = rememberInfiniteTransition(label = "station equalizer")
+    Row(Modifier.height(14.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+        repeat(3) { bar ->
+            val level by transition.animateFloat(
+                initialValue = if (bar == 1) .85f else .3f,
+                targetValue = if (bar == 1) .3f else .95f,
+                animationSpec = infiniteRepeatable(tween(durationMillis = 320 + bar * 60, delayMillis = bar * 80), RepeatMode.Reverse),
+                label = "station equalizer bar $bar",
+            )
+            Box(Modifier.fillMaxHeight(level).width(3.dp).clip(CircleShape).background(tint))
+        }
+    }
 }
 
 /** Network artwork is optional; failed favicons leave a stable RockCast tile. */

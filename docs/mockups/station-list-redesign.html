@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RockMobile — мокап: список станций и метаданные трека</title>
+<style>
+  :root{
+    --bg:#1A1410; --panel:#241C16; --elev:#2E241C; --text:#E8DCC8; --muted:#9A8B78;
+    --accent:#C45C26; --bright:#E58E3B; --line:#3A2E24; --pc:#733314; --onpc:#FFDCC5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px;background:#0E0B08;color:var(--text);
+       font-family:"Segoe UI",Roboto,system-ui,sans-serif;}
+  h1{font-size:22px;margin:0 0 6px}
+  h2{font-size:15px;margin:0 0 14px;color:var(--muted);font-weight:500}
+  .sub{color:var(--muted);font-size:13px;max-width:900px;line-height:1.5;margin-bottom:28px}
+  .row{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+  .frame{background:var(--bg);border:1px solid var(--line);border-radius:22px;
+         width:372px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.55)}
+  .screen{border-radius:18px;overflow:hidden;background:var(--bg)}
+  .cap{margin:12px 4px 0;font-size:13px;color:var(--muted)}
+  .cap b{color:var(--text);display:block;font-size:14px;margin-bottom:2px}
+
+  /* ---------- common atoms ---------- */
+  .logo{width:48px;height:48px;border-radius:10px;background:var(--elev);flex:none;
+        display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px}
+  .name{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chips{display:flex;gap:6px;align-items:center;margin-top:5px;overflow:hidden}
+  .chip{font-size:12px;line-height:1;padding:5px 9px;border-radius:11px;background:var(--elev);
+        border:1px solid var(--line);color:var(--bright);white-space:nowrap;flex:none}
+  .chip.more{color:var(--muted)}
+  .meta{font-size:12px;color:var(--muted);white-space:nowrap;flex:none}
+  .btn{width:44px;height:44px;border-radius:50%;background:var(--accent);flex:none;
+       display:flex;align-items:center;justify-content:center;font-size:17px;color:#1A1410}
+  .btn.pause{background:var(--bright)}
+  .star{position:absolute;right:-6px;top:-6px;width:22px;height:22px;border-radius:50%;
+        background:var(--panel);border:1px solid var(--line);display:flex;align-items:center;
+        justify-content:center;font-size:11px;color:var(--muted)}
+  .star.on{color:var(--bright);border-color:var(--accent)}
+  .divider{height:1px;background:var(--line);margin:0 12px}
+
+  /* ---------- screen 1: как сейчас ---------- */
+  .oldrow{display:flex;align-items:center;gap:8px;padding:7px 10px}
+  .oldrow .c1{flex:1.5;min-width:0}
+  .oldrow .c2{flex:1;min-width:0;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden}
+  .oldrow .c3{flex:.75;min-width:0;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden}
+  .oldrow .name{font-size:14px}
+  .oldrow .icn{width:36px;height:36px;flex:none;display:flex;align-items:center;justify-content:center;
+               color:var(--muted);font-size:13px}
+  .oldrow .play{color:var(--accent)}
+  .cutbar{position:relative;display:inline-block}
+  .cutbar::after{content:"";position:absolute;top:1px;bottom:1px;right:-2px;width:2px;background:var(--accent)}
+
+  /* ---------- screen 2: вариант A ---------- */
+  .list{padding:8px 6px}
+  .newrow{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:12px}
+  .newrow:has(.btn){background:transparent}
+  .body{flex:1;min-width:0}
+  .current{background:var(--pc)}
+  .current .name{color:var(--onpc)}
+  .current .chip{background:rgba(26,20,16,.35);border-color:rgba(255,220,197,.25);color:var(--onpc)}
+  .current .meta{color:rgba(255,220,197,.75)}
+  .onair{display:flex;gap:5px;align-items:flex-end;height:12px;margin-right:2px;flex:none}
+  .onair i{width:3px;background:var(--bright);border-radius:1px;display:block}
+  .onair i:nth-child(1){height:5px}.onair i:nth-child(2){height:11px}.onair i:nth-child(3){height:8px}
+  .right{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none}
+  .right .meta{font-size:11px}
+
+  /* ---------- screen 3: вариант B ---------- */
+  .cards{padding:10px;display:flex;flex-direction:column;gap:8px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;
+        display:flex;align-items:center;gap:12px}
+  .card .logo{width:56px;height:56px;border-radius:12px;font-size:20px}
+  .card.current{border-color:var(--accent);background:linear-gradient(0deg,rgba(196,92,38,.16),rgba(196,92,38,.16)),var(--panel)}
+
+  /* ---------- screen 4: экран станции ---------- */
+  .player{padding:18px 16px;display:flex;flex-direction:column;align-items:center}
+  .back{align-self:flex-start;color:var(--muted);font-size:18px;margin-bottom:10px}
+  .hero{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+        padding:16px;display:flex;flex-direction:column;align-items:center}
+  .hero .logo{width:150px;height:150px;border-radius:16px;font-size:44px;margin-bottom:12px}
+  .hero h3{margin:0;font-size:20px}
+  .track-label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:12px}
+  .track{font-size:17px;color:var(--bright);text-align:center;margin-top:3px}
+  .track small{display:block;font-size:13px;color:var(--text);opacity:.85;margin-top:2px}
+  .badge{margin-top:14px;background:var(--elev);border-radius:10px;padding:7px 12px;font-size:13px;color:var(--text)}
+  .transport{display:flex;gap:22px;align-items:center;margin-top:16px}
+  .transport .btn{width:60px;height:60px;font-size:24px}
+  .transport .sb{width:44px;height:44px;color:var(--muted);font-size:16px;display:flex;align-items:center;justify-content:center}
+
+  .notes{margin-top:34px;max-width:940px;background:var(--panel);border:1px solid var(--line);
+         border-radius:14px;padding:18px 22px;font-size:13.5px;line-height:1.65;color:var(--text)}
+  .notes h4{margin:0 0 10px;font-size:15px}
+  .notes li{margin:5px 0}
+  .notes code{background:var(--elev);border-radius:4px;padding:1px 6px;font-size:12.5px;color:var(--bright)}
+</style>
+</head>
+<body>
+
+<h1>RockMobile · редизайн списка станций + метаданные трека</h1>
+<h2>Палитра и форма — существующая тема RockCast (тёмная), изменения только в композиции строк</h2>
+<p class="sub">
+  Проблема сегодняшней строки: имя, теги и битрейт делят ~160dp ширины с тремя иконочными кнопками —
+  на экране 360dp имени достаётся ~74dp (обрывается на ~9 символах), тегам ~40dp (не влезает ни один),
+  при этом двухбуквенный код страны виден полностью. Ниже — два варианта новой строки и фрагмент
+  экрана станции с местом для метаданных трека.
+</p>
+
+<div class="row">
+
+  <!-- ================= 1. КАК СЕЙЧАС ================= -->
+  <div>
+    <div class="frame"><div class="screen">
+      <div style="padding:12px 10px 4px;font-size:13px;color:var(--muted)">Stations · rockserver · 41</div>
+      <div class="oldrow">
+        <div class="logo">S</div>
+        <div class="c1">
+          <div class="name"><span class="cutbar">SomaFM — Me</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">US</div>
+        </div>
+        <div class="c2">h…</div>
+        <div class="c3">…</div>
+        <div class="icn play">▶</div><div class="icn">›</div><div class="icn">☆</div>
+      </div>
+      <div class="divider"></div>
+      <div class="oldrow">
+        <div class="logo">R</div>
+        <div class="c1">
+          <div class="name"><span class="cutbar">Radio Intere</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">PL</div>
+        </div>
+        <div class="c2">h…</div>
+        <div class="c3">…</div>
+        <div class="icn play">▶</div><div class="icn">›</div><div class="icn">☆</div>
+      </div>
+      <div class="divider"></div>
+      <div style="padding:10px;font-size:12px;color:var(--muted);line-height:1.6">
+        Тап по строке = играть · ▶ = играть · › = экран станции · ☆ = избранное<br>
+        Оранжевые засечки — граница обреза текста на 360dp
+      </div>
+    </div></div>
+    <div class="cap"><b>Сейчас</b>имя ~74dp, теги ~40dp, битрейт ~37dp, страна видна</div>
+  </div>
+
+  <!-- ================= 2. ВАРИАНТ A ================= -->
+  <div>
+    <div class="frame"><div class="screen">
+      <div style="padding:12px 10px 2px;font-size:13px;color:var(--muted)">Stations · rockserver · 41</div>
+      <div class="list">
+        <div class="newrow current">
+          <div style="position:relative;flex:none">
+            <div class="logo">S</div><div class="star on">★</div>
+          </div>
+          <div class="body">
+            <div style="display:flex;align-items:center;gap:6px">
+              <div class="name">SomaFM — Metal Detector</div>
+              <div class="onair"><i></i><i></i><i></i></div>
+            </div>
+            <div class="chips">
+              <span class="chip">heavy metal</span><span class="chip">metal</span>
+              <span class="meta">US · 128k · MP3</span>
+            </div>
+          </div>
+          <div class="right"><div class="btn pause">❚❚</div></div>
+        </div>
+
+        <div class="newrow">
+          <div style="position:relative;flex:none">
+            <div class="logo">R</div><div class="star">☆</div>
+          </div>
+          <div class="body">
+            <div class="name">Radio Intereconomic<br><span style="font-size:11px;color:var(--muted);font-weight:400">две строки при длинном имени</span></div>
+            <div class="chips">
+              <span class="chip">hard rock</span><span class="chip">classicrock</span><span class="chip more">+3</span>
+              <span class="meta">PL · 128k</span>
+            </div>
+          </div>
+          <div class="right"><div class="btn">▶</div></div>
+        </div>
+
+        <div class="newrow">
+          <div style="position:relative;flex:none">
+            <div class="logo">P</div><div class="star">☆</div>
+          </div>
+          <div class="body">
+            <div class="name">Punkrockotics Radio</div>
+            <div class="chips">
+              <span class="chip">punk</span><span class="chip">hardcore</span>
+              <span class="meta">DE · 192k · AAC</span>
+            </div>
+          </div>
+          <div class="right"><div class="btn">▶</div></div>
+        </div>
+      </div>
+    </div></div>
+    <div class="cap"><b>Вариант A — плотный список (рекомендую)</b>
+      имя ~210dp (в 3 раза больше), теги — чипсами на второй строке,
+      страна+битрейт — тихая строка в конце, одна кнопка Play/Pause</div>
+  </div>
+
+  <!-- ================= 3. ВАРИАНТ B ================= -->
+  <div>
+    <div class="frame"><div class="screen">
+      <div class="cards">
+        <div class="card current">
+          <div class="logo">S</div>
+          <div class="body">
+            <div style="display:flex;align-items:center;gap:6px"><div class="name">SomaFM — Metal Detector</div>
+              <div class="onair"><i></i><i></i><i></i></div></div>
+            <div class="chips"><span class="chip">heavy metal</span><span class="chip">metal</span>
+              <span class="meta">US · 128k · MP3</span></div>
+          </div>
+          <div class="btn pause">❚❚</div>
+        </div>
+        <div class="card">
+          <div class="logo">R</div>
+          <div class="body">
+            <div class="name">Radio Intereconomic</div>
+            <div class="chips"><span class="chip">hard rock</span><span class="chip more">+4 тега</span>
+              <span class="meta">PL · 128k</span></div>
+          </div>
+          <div class="btn">▶</div>
+        </div>
+        <div class="card">
+          <div class="logo">P</div>
+          <div class="body">
+            <div class="name">Punkrockotics Radio</div>
+            <div class="chips"><span class="chip">punk</span><span class="chip">hardcore</span>
+              <span class="meta">DE · 192k · AAC</span></div>
+          </div>
+          <div class="btn">▶</div>
+        </div>
+      </div>
+    </div></div>
+    <div class="cap"><b>Вариант B — карточки</b>
+      «воздушнее», крупнее логотипы и имя; чуть меньше станций на экране</div>
+  </div>
+
+  <!-- ================= 4. ЭКРАН СТАНЦИИ ================= -->
+  <div>
+    <div class="frame"><div class="screen">
+      <div class="player">
+        <div class="back">‹ SomaFM — Metal Detector</div>
+        <div class="hero">
+          <div class="logo">S</div>
+          <h3>SomaFM — Metal Detector</h3>
+          <div style="font-size:13px;color:var(--muted);margin-top:4px">heavy metal · metal · US</div>
+          <div class="track-label">Сейчас в эфире</div>
+          <div class="track">Iron Maiden — Fear of the Dark
+            <small>об needle­-drop обновлении из ICY StreamTitle</small>
+          </div>
+          <div class="badge">🎧 Играть на: 📱 Этот телефон ▾</div>
+          <div class="transport">
+            <div class="sb">⏮</div><div class="btn pause">❚❚</div><div class="sb">⏹</div><div class="sb">⏭</div>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-top:12px">● В ЭФИРЕ · Воспроизводится</div>
+        </div>
+      </div>
+    </div></div>
+    <div class="cap"><b>Экран станции — место метаданных</b>
+      строка «Сейчас в эфире» между описанием и селектором вывода:
+      сюда пойдёт PlaybackState.streamTitle после починки ICY</div>
+  </div>
+
+</div>
+
+<div class="notes">
+  <h4>Что меняется и почему</h4>
+  <ul>
+    <li><b>Имя станции</b> — единственная «жирная» строка с <code>weight(1f)</code> и одной кнопкой справа вместо трёх:
+        ~210dp вместо ~74dp, обрезаться будут только экстремально длинные имена (2 строки в варианте B).</li>
+    <li><b>Стили/теги</b> — подняты на вторую строку заголовка как чипы <code>surfaceVariant</code> с текстом
+        <code>RockAccentBright</code>; показываем 2–3 главных тега + «+N», тап по чипу = применить фильтр жанра.</li>
+    <li><b>Страна и битрейт</b> — понижены до тихой приписки <code>US · 128k · MP3</code> в конце строки чипов
+        (labelSmall, <code>RockMuted</code>); из самостоятельных колонок убраны.</li>
+    <li><b>Действия</b>: тап по строке — играть/пауза (как сейчас), круглая кнопка Play/Pause 44dp — то же самое
+        (дубль оставлен как явный affordance), шеврон убран — на экран станции ведёт тап по мини-плееру
+        и заголовок; избранное — «звёздочка»-бейдж на углу логотипа.</li>
+    <li><b>Текущая станция</b> — заливка <code>primaryContainer #733314</code> (вместо сплошного
+        <code>primary</code>, который «сжигает» контраст текста) + анимированный эквалайзер у имени.</li>
+    <li><b>Метаданные трека</b> — блок «Сейчас в эфире» на экране станции и строка в мини-плеере;
+        сегодня они не отображаются из-за того, что <code>MediaItem.title</code> перезаписывает
+        ICY StreamTitle при слиянии метаданных в ExoPlayer (детали — в ответе агента).</li>
+  </ul>
+</div>
+
+</body>
+</html>

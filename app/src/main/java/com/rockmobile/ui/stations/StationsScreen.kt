@@ -131,6 +131,7 @@ fun StationsScreen(
                             openStation = { station -> openStation(station.id) },
                             favourites = personal.favourites.map { it.stationId }.toSet(),
                             toggleFavourite = toggleFavourite,
+                            selectGenre = { genre -> updateFilters { it.copy(genre = genre) } },
                         )
                     }
                 }
