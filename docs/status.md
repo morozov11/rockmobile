@@ -1,5 +1,12 @@
 # RockMobile status
 
+## RockServer audio proxy (2026-10-16)
+
+- Phone playback now uses `/api/v1/stations/{id}/stream` for bundled stations, search and voice results. Direct upstream fallback is removed.
+- The service resolves/renews the native access token on each connection and scopes Authorization to the configured relay. Missing/revoked credentials show a sign-in message without blacklisting a voice station. Offline catalog browsing remains available.
+- Checks: `:app:testDebugUnitTest` (194 passed), `:app:assembleDebug`, `:app:lintDebug` succeeded.
+- Physical RMX5056: installed APK; MP3 181.FM Hair Band / Hard Rock and AAC Radio Paradise Rock Mix played with ICY titles. Verified pause/resume, next station, and continued audio output after 30 seconds with the screen off. The user subsequently confirmed normal playback.
+
 ## Local ICY track metadata and station restore after activity restart (2026-10-15)
 
 Two fixes verified live on the connected phone (file/UI-dump based evidence — this OEM suppresses

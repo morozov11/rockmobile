@@ -21,7 +21,7 @@ AccountScreen ── TargetDirectoryViewModel ── TargetDirectoryRepository
 
 ## Каталог
 
-`StationRepository` реализует local-first policy, как RockCast: первый экран читает проверенный bundled `stations.v1.json` и не подменяет его результатом поиска. В фоне `GET /v1/catalog/stations` постранично загружает серверную лексику фильтров, но не заменяет видимый стартовый список. Текст и любой выбранный жанр/страна/язык отправляются как естественный запрос в `POST /v1/search`; при ошибке серверного поиска ViewModel использует offline search, если он доступен. Loader сверяет SHA-256, catalogVersion и schemaVersion, а baseline повторяет порядок RockCast. Отмена coroutine пробрасывается и не считается fallback. Если локальные источники недоступны, ViewModel показывает фатальную ошибку. Ошибки Media3 не поступают в repository и не могут переключить каталог.
+`StationRepository` реализует local-first policy, как RockCast: первый экран читает проверенный bundled `stations.v1.json` и не подменяет его результатом поиска. В фоне `GET /api/v1/catalog/stations` постранично загружает серверную лексику фильтров, но не заменяет видимый стартовый список. Текст и любой выбранный жанр/страна/язык отправляются как естественный запрос в `POST /api/v1/search`; при ошибке серверного поиска ViewModel использует offline search, если он доступен. Loader сверяет SHA-256, catalogVersion и schemaVersion, а baseline повторяет порядок RockCast. Отмена coroutine пробрасывается и не считается fallback. Если локальные источники недоступны, ViewModel показывает фатальную ошибку. Ошибки Media3 не поступают в repository и не могут переключить каталог.
 
 `StationFilterOptions` хранит полный набор вариантов, полученный из серверного каталога, либо локальный набор при offline fallback. `StationsViewModel` отвечает за debounce, отмену устаревших запросов и возврат к baseline после очистки поиска. Voice-result заменяет видимый список ранжированными кандидатами Rockserver и сразу запускает выбранную станцию.
 
@@ -33,7 +33,7 @@ AccountScreen ── TargetDirectoryViewModel ── TargetDirectoryRepository
 
 ## Официальный RockServer
 
-Release-клиент использует `https://rockplatform.win`. Публичные `POST /v1/search` и `wss://…/v1/voice/stream` идут без Bearer. Legacy LAN/emulator URL и старый bootstrap-токен scrub'ятся при старте `SettingsRepository`; native account tokens живут только в Keystore-защищённом хранилище.
+Release-клиент использует `https://rockplatform.win`. Публичные `POST /api/v1/search` и `wss://…/api/v1/voice/stream` идут без Bearer. Legacy LAN/emulator URL и старый bootstrap-токен scrub'ятся при старте `SettingsRepository`; native account tokens живут только в Keystore-защищённом хранилище.
 
 ## Аккаунт и pairing
 
@@ -83,3 +83,7 @@ is used as proof of remote playback.
 | `viewModelScope` | Загрузка и состояние каталога | Владеть ExoPlayer |
 | Voice scope | Одна voice-операция | Передавать непроверенные данные в player |
 | MediaSessionService | ExoPlayer и media-сессия | Владеть UI |
+
+## Источник аудио
+
+Локальное воспроизведение использует только `/api/v1/stations/{id}/stream` RockServer с native bearer из `NativeSessionManager`; прямого fallback на `Station.streamUrl` нет. Каталог доступен офлайн, запуск аудио требует сети и привязки устройства к аккаунту.

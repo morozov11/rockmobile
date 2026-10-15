@@ -205,7 +205,7 @@ fun AccountDialog(viewModel: AccountViewModel, baseUrl: String, syncStatus: Pers
                             AccountErrorAction.UpdateApp -> Text("Для продолжения установите новую версию RockMobile.")
                             AccountErrorAction.None -> Unit
                         }
-                        Text("Анонимное радио продолжает работать без аккаунта.")
+                        Text(disconnectedSecondaryCopy())
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -242,7 +242,7 @@ private fun dialogTitle(state: AccountUiState): String = when (state) {
 
 internal fun disconnectedPrimaryCopy() = "Подключите RockMobile к существующему Rock-аккаунту."
 
-internal fun disconnectedSecondaryCopy() = "Радио и сохранённые станции работают без аккаунта."
+internal fun disconnectedSecondaryCopy() = "Для прослушивания радио через RockServer подключите аккаунт."
 
 internal fun visibleBuild() = "${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_REVISION})"
 

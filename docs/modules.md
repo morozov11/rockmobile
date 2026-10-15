@@ -43,7 +43,8 @@
 | `ui/stations/StationPlayerScreen.kt` | Экран станции: hero-карточка, селектор вывода, live-индикатор, transport и карточка громкости |
 | `ui/stations/PersonalDialogs.kt` | Диалоги избранного и истории с разрешением станций из каталогов |
 | `playback/PlaybackController.kt` | Очередь, MediaController, ICY-треки из `LiveIcyTitles`, ошибки потока и восстановление станции после пересоздания Activity |
-| `playback/RockmobileMediaSessionService.kt` | Владелец ExoPlayer и MediaSession; публикует ICY StreamTitle в шину `LiveIcyTitles`, задаёт session activity для уведомления |
+| `playback/StationStreamUrl.kt` | URL прокси по station ID, проверка области передачи токена и native Authorization headers |
+| `playback/RockmobileMediaSessionService.kt` | Владелец ExoPlayer и MediaSession, авторизация прокси через ResolvingDataSource; публикует ICY StreamTitle в шину `LiveIcyTitles`, задаёт session activity для уведомления |
 | `voice/VoiceRecorder.kt` | `AudioRecord`, PCM и детектор конца речи |
 | `voice/RockserverVoiceClient.kt` | WebSocket и строгий parser событий |
 | `voice/VoiceCommandController.kt` | Voice state machine и безопасный playback |

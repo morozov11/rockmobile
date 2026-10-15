@@ -61,7 +61,7 @@ class AccountSessionTest {
 
     @Test fun accountIdentity_usesRockMobileAndShowsInstalledBuild() {
         assertEquals("Подключите RockMobile к существующему Rock-аккаунту.", disconnectedPrimaryCopy())
-        assertEquals("Радио и сохранённые станции работают без аккаунта.", disconnectedSecondaryCopy())
+        assertEquals("Для прослушивания радио через RockServer подключите аккаунт.", disconnectedSecondaryCopy())
         assertEquals("RockMobile", rockMobileTitle())
         assertEquals("RockMobile logo", rockMobileLogoDescription())
         assertTrue(visibleBuild().matches(Regex("0\\.1\\.6 \\([0-9a-f]{7}\\)")))

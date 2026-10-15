@@ -7,14 +7,24 @@ import androidx.media3.common.C
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.metadata.icy.IcyInfo
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.rockmobile.MainActivity
+import com.rockmobile.account.KeystoreCredentialStore
+import com.rockmobile.account.NativeSessionManager
+import com.rockmobile.account.RockserverAccountGateway
+import com.rockmobile.data.api.RockserverApi
+import com.rockmobile.settings.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.runBlocking
 
 /**
  * Latest ICY StreamTitle of the current media item. Timed metadata does not cross the
@@ -38,7 +48,19 @@ class RockmobileMediaSessionService : MediaSessionService() {
     private var session: MediaSession? = null
     override fun onCreate() {
         super.onCreate()
-        val player = ExoPlayer.Builder(this).build().apply {
+        val settings = SettingsRepository(this)
+        val sessions = NativeSessionManager(
+            RockserverAccountGateway(RockserverApi(), settings::rockserverUrl),
+            KeystoreCredentialStore(applicationContext),
+        )
+        val dataSource = ResolvingDataSource.Factory(DefaultDataSource.Factory(this, DefaultHttpDataSource.Factory())) { spec ->
+            spec.withRequestHeaders(runBlocking {
+                stationStreamHeaders(settings.rockserverUrl(), spec.uri.toString(), spec.httpRequestHeaders) {
+                    sessions.currentSession()?.accessToken
+                }
+            })
+        }
+        val player = ExoPlayer.Builder(this).setMediaSourceFactory(DefaultMediaSourceFactory(dataSource)).build().apply {
             setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             setHandleAudioBecomingNoisy(true)
             repeatMode = Player.REPEAT_MODE_OFF

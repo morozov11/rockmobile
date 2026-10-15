@@ -34,6 +34,7 @@ data class PlaybackState(
 class PlaybackController(
     context: Context,
     private val unavailableVoiceStations: UnavailableVoiceStationStore,
+    private val rockserverUrl: () -> String,
 ) : Player.Listener {
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
@@ -126,13 +127,14 @@ class PlaybackController(
     override fun onIsPlayingChanged(isPlaying: Boolean) = publish()
     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
         // Keep a stable, actionable state even if Media3 clears playerError during its reset.
-        if (awaitingVoiceStationStart) _state.value.station?.let { unavailableVoiceStations.markUnavailable(it.id) }
+        val needsAccount = error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NO_PERMISSION
+        if (awaitingVoiceStationStart && !needsAccount) _state.value.station?.let { unavailableVoiceStations.markUnavailable(it.id) }
         awaitingVoiceStationStart = false
-        _state.value = _state.value.copy(error = "Couldn't connect to this station")
+        _state.value = _state.value.copy(error = playbackErrorMessage(error.errorCode))
     }
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = publish()
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = publish()
-    private fun mediaItem(station: Station) = MediaItem.Builder().setUri(station.streamUrl).setMediaId(station.id)
+    private fun mediaItem(station: Station) = MediaItem.Builder().setUri(stationStreamUrl(rockserverUrl(), station.id)).setMediaId(station.id)
         .setMediaMetadata(MediaMetadata.Builder().setTitle(station.name).setArtworkUri(station.faviconUrl?.let(android.net.Uri::parse)).build()).build()
 
     /**
@@ -162,7 +164,7 @@ class PlaybackController(
         _state.value = _state.value.copy(
             station = current,
             isPlaying = active.isPlaying,
-            error = active.playerError?.let { "Couldn't connect to this station" } ?: _state.value.error,
+            error = active.playerError?.let { playbackErrorMessage(it.errorCode) } ?: _state.value.error,
             streamTitle = title ?: LiveIcyTitles.latest.value?.takeIf { it.mediaId == current?.id }?.title,
             streamArtist = metadata.artist?.toString()?.takeIf { it.isNotBlank() },
             canSkipPrevious = active.hasPreviousMediaItem(),
@@ -173,3 +175,8 @@ class PlaybackController(
 
     private data class PendingPlay(val station: Station, val stations: List<Station>, val fromVoiceResult: Boolean)
 }
+
+internal fun playbackErrorMessage(errorCode: Int): String =
+    if (errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NO_PERMISSION)
+        "Sign in to listen through RockServer"
+    else "Couldn't connect to this station"

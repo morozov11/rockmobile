@@ -4,11 +4,20 @@
 Нажатие station / voice-result
   → PlaybackController.play(station, queue)
   → MediaController.setMediaItems + prepare + play
-  → RockmobileMediaSessionService / ExoPlayer
+  → MediaItem URI: /api/v1/stations/{encoded station.id}/stream
+  → RockmobileMediaSessionService / ResolvingDataSource
+  → NativeSessionManager.currentSession → Authorization: Bearer <access token>
+  → RockServer proxy → ExoPlayer
   → notification, Bluetooth, lock screen, audio output
 ```
 
 `PlaybackController` хранит очередь, поэтому Previous/Next работают и для каталога, и для voice-кандидатов. Пока асинхронный `MediaController` подключается, первый вызов `play` хранится как pending и выполняется после подключения.
+
+## Источник аудио и авторизация
+
+Для каталога, результатов поиска и voice используется один маршрут RockServer по стабильному `station.id`. Исходный `Station.streamUrl` остаётся метаданными каталога и не передаётся ExoPlayer как источник аудио. `StationStreamUrl.kt` кодирует ID как один сегмент пути и разрешает заголовок авторизации только для маршрута прокси настроенного сервера; query-параметры и посторонние URL отклоняются.
+
+При каждом открытии/повторном подключении сервис получает актуальную native-сессию через `NativeSessionManager`. Обновление токена и сеть выполняются на загрузочном потоке Media3, вне UI. Токен передаётся только заголовком, не через URI, очередь или логи. Без аккаунта либо при отзыве credentials возвращается `ERROR_CODE_IO_NO_PERMISSION`; интерфейс предлагает вход в аккаунт и не помечает voice-станцию как недоступную из-за отсутствия входа. Прямого fallback к радиостанции нет. При недоступном сервере каталог остаётся доступен для просмотра.
 
 ## Выбор вывода: RockCast и этот телефон
 
@@ -68,7 +77,7 @@ Play, и нажатие запускает воспроизведение.
 
 ## Ошибки и повтор
 
-Ошибка Media3 отображается как `Couldn't connect to this station`. Она не влияет на `StationRepository`: недоступность одного stream URL не означает, что серверный каталог следует заменить bundled-каталогом. Новый выбор станции или **Try again** очищает ошибку и повторно подготавливает плеер.
+Ошибка доступа к аккаунту отображается как `Sign in to listen through RockServer`, остальные ошибки Media3 — как `Couldn't connect to this station`. Она не влияет на `StationRepository`: недоступность одного stream URL не означает, что серверный каталог следует заменить bundled-каталогом. Новый выбор станции или **Try again** очищает ошибку и повторно подготавливает плеер.
 
 ## Voice capture
 

@@ -123,7 +123,7 @@ class MainActivity : ComponentActivity() {
             }
             val state = model.state.collectAsStateWithLifecycle().value
             val personal = personalData.state.collectAsStateWithLifecycle().value
-            val playback = androidx.compose.runtime.remember { PlaybackController(this, unavailableVoiceStations) }
+            val playback = androidx.compose.runtime.remember { PlaybackController(this, unavailableVoiceStations, settings::rockserverUrl) }
             val snackbarHostState = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }
             val liveStore = targetDirectory.live
             val liveState = liveStore.state.collectAsStateWithLifecycle().value
